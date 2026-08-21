@@ -1,0 +1,4 @@
+# Keep uploaded scripts out of git by default; __init__.py is tracked.
+*
+!.gitignore
+!__init__.py
