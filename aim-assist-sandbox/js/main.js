@@ -53,6 +53,59 @@ const targets = createTargets(scene);
 const aimAssist = new AimAssist();
 const ui = new UI(aimAssist, camera);
 
+// Debug aim lines (camera → each target aim point)
+const debugLineMaterialOutside = new THREE.LineBasicMaterial({ color: 0x64748b });
+const debugLineMaterialInside = new THREE.LineBasicMaterial({ color: 0xfbbf24 });
+const debugLineMaterialSelected = new THREE.LineBasicMaterial({ color: 0x44ff88 });
+const debugLines = targets.map(() => {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ]);
+  const line = new THREE.Line(geo, debugLineMaterialOutside);
+  line.visible = false;
+  scene.add(line);
+  return line;
+});
+
+function updateDebugLines() {
+  const show = ui.drawAimLines;
+  const camPos = player.position;
+  for (let i = 0; i < targets.length; i++) {
+    const line = debugLines[i];
+    const ev = aimAssist.evaluations[i];
+    if (!show || !ev) {
+      line.visible = false;
+      continue;
+    }
+    const positions = line.geometry.attributes.position;
+    positions.setXYZ(0, camPos.x, camPos.y, camPos.z);
+    positions.setXYZ(1, ev.aimPoint.x, ev.aimPoint.y, ev.aimPoint.z);
+    positions.needsUpdate = true;
+    line.geometry.computeBoundingSphere();
+    line.visible = true;
+    if (ev.target === aimAssist.selectedTarget) {
+      line.material = debugLineMaterialSelected;
+    } else if (ev.insideFov) {
+      line.material = debugLineMaterialInside;
+    } else {
+      line.material = debugLineMaterialOutside;
+    }
+  }
+}
+
+function updateTargetColours() {
+  for (const ev of aimAssist.evaluations) {
+    if (ev.target === aimAssist.selectedTarget) {
+      ev.target.setVisualState("selected");
+    } else if (ev.insideFov && ev.inRange) {
+      ev.target.setVisualState("insideFov");
+    } else {
+      ev.target.setVisualState("valid");
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // First-person camera state
 // ---------------------------------------------------------------------------
@@ -150,10 +203,8 @@ function animate() {
   player.yaw = assisted.yaw;
   player.pitch = assisted.pitch;
 
-  // Highlight selected target
-  for (const target of targets) {
-    target.setHighlighted(target === aimAssist.selectedTarget);
-  }
+  updateTargetColours();
+  updateDebugLines();
 
   applyCameraTransform();
 

@@ -54,6 +54,24 @@ export class UI {
       this.aimAssist.projectileSpeed = parseFloat(el.value);
       document.getElementById("projectile-speed-value").textContent = el.value;
     });
+
+    bind("debug-ignore-range", (el) => {
+      this.aimAssist.debugIgnoreRange = el.checked;
+    });
+
+    bind("debug-force-first", (el) => {
+      this.aimAssist.debugForceFirstTarget = el.checked;
+    });
+
+    const linesToggle = document.getElementById("debug-aim-lines");
+    this.drawAimLines = linesToggle.checked;
+    linesToggle.addEventListener("input", () => {
+      this.drawAimLines = linesToggle.checked;
+    });
+
+    document.getElementById("debug-log-pipeline").addEventListener("click", () => {
+      this.aimAssist.logPipelineOnce();
+    });
   }
 
   resizeOverlay() {

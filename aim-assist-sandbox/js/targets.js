@@ -14,7 +14,8 @@ export class DummyTarget {
       spawn.vz ?? (Math.random() - 0.5) * 4
     );
 
-    // Bone heights relative to mesh origin (feet at y=0)
+    // Bone heights from feet (world y = 0). Capsule center sits at +meshCenterOffset.
+    this.meshCenterOffset = 0.9;
     this.headHeight = 1.65;
     this.chestHeight = 1.25;
 
@@ -25,18 +26,29 @@ export class DummyTarget {
       metalness: 0.1,
     });
     this.mesh = new THREE.Mesh(bodyGeo, bodyMat);
-    this.mesh.position.set(spawn.x, 0.9, spawn.z);
+    this.mesh.position.set(spawn.x, this.meshCenterOffset, spawn.z);
     this.mesh.castShadow = true;
     scene.add(this.mesh);
 
-    // Head marker (small sphere, for visualization)
+    // Head marker (small sphere, for visualization) — local Y matches bone fix
     const headGeo = new THREE.SphereGeometry(0.2, 8, 8);
     const headMat = new THREE.MeshStandardMaterial({ color: 0xffccaa });
     this.headMarker = new THREE.Mesh(headGeo, headMat);
-    this.headMarker.position.set(0, this.headHeight - 0.9, 0);
+    this.headMarker.position.set(0, this.headHeight - this.meshCenterOffset, 0);
     this.mesh.add(this.headMarker);
 
     this.baseMaterial = bodyMat;
+    this.validMaterial = new THREE.MeshStandardMaterial({
+      color: 0x8899aa,
+      roughness: 0.6,
+      metalness: 0.1,
+    });
+    this.insideFovMaterial = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      emissive: 0x553300,
+      roughness: 0.5,
+      metalness: 0.15,
+    });
     this.highlightMaterial = new THREE.MeshStandardMaterial({
       color: 0x44ff88,
       emissive: 0x115522,
@@ -68,13 +80,31 @@ export class DummyTarget {
     }
   }
 
+  /**
+   * Visual state for selection debugging:
+   *   "valid"     — grey (alive / considered)
+   *   "insideFov" — amber (passes cone test, not selected)
+   *   "selected"  — green (closest to crosshair)
+   */
+  setVisualState(state) {
+    if (state === "selected") {
+      this.mesh.material = this.highlightMaterial;
+    } else if (state === "insideFov") {
+      this.mesh.material = this.insideFovMaterial;
+    } else {
+      this.mesh.material = this.validMaterial;
+    }
+  }
+
   setHighlighted(active) {
-    this.mesh.material = active ? this.highlightMaterial : this.baseMaterial;
+    this.setVisualState(active ? "selected" : "valid");
   }
 
   dispose() {
     this.mesh.geometry.dispose();
     this.baseMaterial.dispose();
+    this.validMaterial.dispose();
+    this.insideFovMaterial.dispose();
     this.highlightMaterial.dispose();
     this.headMarker.geometry.dispose();
     this.headMarker.material.dispose();

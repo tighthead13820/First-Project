@@ -52,6 +52,19 @@
         <input type="range" id="projectile-speed" min="50" max="500" step="10" value="200" />
         <span id="projectile-speed-value">200</span>
       </label>
+      <label>
+        Debug: ignore max range
+        <input type="checkbox" id="debug-ignore-range" />
+      </label>
+      <label>
+        Debug: force first target
+        <input type="checkbox" id="debug-force-first" />
+      </label>
+      <label>
+        Debug: draw aim lines
+        <input type="checkbox" id="debug-aim-lines" checked />
+      </label>
+      <button type="button" id="debug-log-pipeline">Log pipeline once</button>
     </aside>
   </div>
   <script type="importmap">

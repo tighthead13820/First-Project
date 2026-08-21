@@ -86,12 +86,23 @@ export function lerpAngle(current, target, smoothing) {
 }
 
 /**
- * World-space aim point on a target (head or chest offset).
+ * World-space aim point on a target (head or chest).
+ *
+ * Bone heights (headHeight / chestHeight) are measured from the *feet*
+ * (ground-relative, y = 0). The capsule mesh is centred at
+ * mesh.position.y = feetY + meshCenterOffset (default 0.9), so we must
+ * NOT add mesh.position.y + height — that double-counts the center offset
+ * and places the aim point ~0.9 m too high.
+ *
+ * Correct: feetY = mesh.y - meshCenterOffset; aimY = feetY + boneHeight
+ *        = mesh.y + (boneHeight - meshCenterOffset)
+ * which matches the visual headMarker local offset.
  */
 export function getBoneWorldPosition(target, bone, out = _scratchA) {
   const base = target.mesh.position;
   const height = bone === "head" ? target.headHeight : target.chestHeight;
-  return out.set(base.x, base.y + height, base.z);
+  const centerOffset = target.meshCenterOffset ?? 0.9;
+  return out.set(base.x, base.y + (height - centerOffset), base.z);
 }
 
 /**
