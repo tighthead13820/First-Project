@@ -68,6 +68,7 @@ class OverlayApp:
     def _sync_fire_options_to_script(self) -> None:
         opts = self.panel.fire_option_values()
         self.scripts.apply_fire_options(
+            auto_fire_l2=bool(opts["auto_fire_l2"]),
             auto_fire_r2=bool(opts["auto_fire_r2"]),
             recoil_compensate=bool(opts["recoil_compensate"]),
             recoil_vertical=float(opts["recoil_vertical"]),

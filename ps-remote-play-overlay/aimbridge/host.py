@@ -74,13 +74,15 @@ class ScriptHost:
         if self.script is not None:
             self.script.reset()
         if not self.enabled:
-            # Return stick + trigger to rest when disabling script drive.
+            # Return stick + triggers to rest when disabling script drive.
             self.state.set_right_stick(0.0, 0.0)
+            self.state.set_l2(0.0)
             self.state.set_r2(0.0)
 
     def apply_fire_options(
         self,
         *,
+        auto_fire_l2: bool | None = None,
         auto_fire_r2: bool | None = None,
         recoil_compensate: bool | None = None,
         recoil_vertical: float | None = None,
@@ -91,6 +93,8 @@ class ScriptHost:
         settings = getattr(script, "settings", None) if script is not None else None
         if settings is None:
             return
+        if auto_fire_l2 is not None and hasattr(settings, "auto_fire_l2"):
+            settings.auto_fire_l2 = bool(auto_fire_l2)
         if auto_fire_r2 is not None and hasattr(settings, "auto_fire_r2"):
             settings.auto_fire_r2 = bool(auto_fire_r2)
         if recoil_compensate is not None and hasattr(settings, "recoil_compensate"):
@@ -108,12 +112,14 @@ class ScriptHost:
         settings = getattr(self.script, "settings", None) if self.script else None
         if settings is None:
             return {
+                "auto_fire_l2": True,
                 "auto_fire_r2": True,
                 "recoil_compensate": True,
                 "recoil_vertical": 0.35,
                 "recoil_horizontal": 0.08,
             }
         return {
+            "auto_fire_l2": bool(getattr(settings, "auto_fire_l2", True)),
             "auto_fire_r2": bool(getattr(settings, "auto_fire_r2", True)),
             "recoil_compensate": bool(getattr(settings, "recoil_compensate", True)),
             "recoil_vertical": float(getattr(settings, "recoil_vertical", 0.35)),

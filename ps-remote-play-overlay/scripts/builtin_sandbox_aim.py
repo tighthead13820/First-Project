@@ -44,7 +44,8 @@ class SandboxAimSettings:
     stick_gains: StickGains = field(default_factory=StickGains)
 
     # --- fire / recoil (overlay controller outputs) ---
-    # When locked, set R2 to 1.0 so simulation backends "pull the trigger".
+    # When locked, set L2/R2 so simulation / ViGEm backends pull both triggers.
+    auto_fire_l2: bool = True
     auto_fire_r2: bool = True
     # While firing, push stick opposite a simple upward-recoil model.
     recoil_compensate: bool = True
@@ -88,7 +89,9 @@ class Script:
             self.selected_id = None
             self._fire_time = 0.0
             self.debug_info = "Aim assist disabled"
-            return StickCommand(rx=0.0, ry=0.0, r2=0.0, debug=self.debug_info)
+            return StickCommand(
+                rx=0.0, ry=0.0, l2=0.0, r2=0.0, debug=self.debug_info
+            )
 
         forward = forward_from_angles(self._yaw, self._pitch)
         fov_half = math.radians(self.settings.fov_deg) / 2.0
@@ -134,8 +137,10 @@ class Script:
         if best_id is None:
             self._fire_time = 0.0
             self.debug_info = "No target in FOV cone"
-            # Release trigger and centre stick when lock is lost.
-            return StickCommand(rx=0.0, ry=0.0, r2=0.0, debug=self.debug_info)
+            # Release triggers and centre stick when lock is lost.
+            return StickCommand(
+                rx=0.0, ry=0.0, l2=0.0, r2=0.0, debug=self.debug_info
+            )
 
         to_best = Vec3(
             best_aim.x - cam.position.x,
@@ -162,9 +167,11 @@ class Script:
         self._yaw = new_yaw
         self._pitch = new_pitch
 
-        # --- lock extras: R2 + recoil compensation ---
+        # --- lock extras: L2/R2 + recoil compensation ---
+        l2 = 1.0 if self.settings.auto_fire_l2 else None
         r2 = 1.0 if self.settings.auto_fire_r2 else None
-        if self.settings.auto_fire_r2:
+        firing = self.settings.auto_fire_r2 or self.settings.auto_fire_l2
+        if firing:
             self._fire_time += max(frame.dt, 0.0)
         else:
             self._fire_time = 0.0
@@ -181,7 +188,8 @@ class Script:
             + (best_aim.y - cam.position.y) ** 2
             + (best_aim.z - cam.position.z) ** 2
         )
-        fire_txt = "R2=1.0" if self.settings.auto_fire_r2 else "R2=manual"
+        l2_txt = "L2=1.0" if self.settings.auto_fire_l2 else "L2=manual"
+        r2_txt = "R2=1.0" if self.settings.auto_fire_r2 else "R2=manual"
         recoil_txt = (
             f"recoil Δ=({recoil_rx:+.2f},{recoil_ry:+.2f})"
             if self.settings.recoil_compensate and self.settings.auto_fire_r2
@@ -193,9 +201,11 @@ class Script:
             f"Distance: {dist:.1f} m\n"
             f"Cone angle: {math.degrees(best_angle):.2f}°\n"
             f"Stick RX={rx:+.2f} RY={ry:+.2f}\n"
-            f"{fire_txt}  {recoil_txt}  t={self._fire_time:.2f}s"
+            f"{l2_txt}  {r2_txt}  {recoil_txt}  t={self._fire_time:.2f}s"
         )
-        return StickCommand(rx=rx, ry=ry, r2=r2, debug=self.debug_info)
+        return StickCommand(
+            rx=rx, ry=ry, l2=l2, r2=r2, debug=self.debug_info
+        )
 
     def _recoil_offset(self, fire_time: float) -> tuple[float, float]:
         """

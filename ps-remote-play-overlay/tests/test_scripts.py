@@ -53,6 +53,7 @@ class BuiltinScriptTests(unittest.TestCase):
         cmd = script.update(frame)
         self.assertEqual(script.selected_id, "front")
         self.assertIn("Target: front", cmd.debug)
+        self.assertEqual(cmd.l2, 1.0)
         self.assertEqual(cmd.r2, 1.0)
         self.assertGreater(cmd.ry, 0.0)  # recoil compensation pulls down
 
@@ -65,10 +66,12 @@ class BuiltinScriptTests(unittest.TestCase):
         )
         cmd = script.update(frame)
         self.assertEqual((cmd.rx, cmd.ry), (0.0, 0.0))
+        self.assertEqual(cmd.l2, 0.0)
         self.assertEqual(cmd.r2, 0.0)
 
     def test_can_disable_auto_fire_and_recoil(self) -> None:
         script = load_builtin_sandbox()
+        script.settings.auto_fire_l2 = False
         script.settings.auto_fire_r2 = False
         script.settings.recoil_compensate = False
         frame = AimFrame(
@@ -77,9 +80,9 @@ class BuiltinScriptTests(unittest.TestCase):
             dt=1 / 30,
         )
         cmd = script.update(frame)
+        self.assertIsNone(cmd.l2)
         self.assertIsNone(cmd.r2)
-        # Without recoil, first-frame aim error may still move stick, but
-        # fire_time stays 0 and debug should say R2=manual.
+        self.assertIn("L2=manual", cmd.debug)
         self.assertIn("R2=manual", cmd.debug)
 
 

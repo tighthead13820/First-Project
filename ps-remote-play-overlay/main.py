@@ -15,6 +15,8 @@ Usage (Windows):
 Backend selection:
     python main.py --backend simulation   # default: logs outbound frames
     python main.py --backend null         # UI only, no output path
+    python main.py --backend vigem        # real DualShock 4 via ViGEmBus
+    python main.py --backend vigem-x360   # real Xbox 360 via ViGEmBus
 """
 
 from __future__ import annotations
@@ -36,8 +38,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--backend",
         default="simulation",
-        choices=["simulation", "null"],
-        help="Virtual-controller backend (default: simulation).",
+        choices=["simulation", "null", "vigem", "vigem-ds4", "vigem-x360"],
+        help=(
+            "Virtual-controller backend (default: simulation). "
+            "Use vigem / vigem-ds4 for a real DualShock 4 via ViGEmBus."
+        ),
     )
     return parser.parse_args(argv)
 

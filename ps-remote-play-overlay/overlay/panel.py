@@ -188,6 +188,13 @@ class ControlPanel(QWidget):
         self.script_check = QCheckBox("Drive stick from loaded script")
         script_layout.addWidget(self.script_check)
 
+        self.auto_l2_check = QCheckBox("On lock: press L2")
+        self.auto_l2_check.setChecked(True)
+        self.auto_l2_check.setToolTip(
+            "While the script has a target locked, set L2 = 1.0"
+        )
+        script_layout.addWidget(self.auto_l2_check)
+
         self.auto_r2_check = QCheckBox("On lock: press R2 (auto-fire)")
         self.auto_r2_check.setChecked(True)
         self.auto_r2_check.setToolTip(
@@ -267,6 +274,7 @@ class ControlPanel(QWidget):
         self.r2_row.value_changed.connect(self._on_r2)
         self.sim_check.toggled.connect(self._on_sim_toggled)
         self.script_check.toggled.connect(self._on_script_toggled)
+        self.auto_l2_check.toggled.connect(self._on_fire_options)
         self.auto_r2_check.toggled.connect(self._on_fire_options)
         self.recoil_check.toggled.connect(self._on_fire_options)
         self.recoil_v_spin.valueChanged.connect(self._on_fire_options)
@@ -375,6 +383,7 @@ class ControlPanel(QWidget):
 
     def fire_option_values(self) -> dict[str, bool | float]:
         return {
+            "auto_fire_l2": self.auto_l2_check.isChecked(),
             "auto_fire_r2": self.auto_r2_check.isChecked(),
             "recoil_compensate": self.recoil_check.isChecked(),
             "recoil_vertical": float(self.recoil_v_spin.value()),

@@ -2,25 +2,10 @@
 Simulation backend — exercises the “send output” path without a driver.
 
 When simulation mode is enabled on ControllerState, each push() records
-the axes that *would* be sent to a virtual pad. Swap this class for a
-real ViGEm/vgamepad implementation later without changing the UI.
+the axes that *would* be sent to a virtual pad.
 
-Example future backend sketch (not shipped):
-
-    import vgamepad as vg
-
-    class ViGEmBackend(VirtualControllerBackend):
-        name = "vigem"
-        def connect(self):
-            self.pad = vg.VX360Gamepad()  # or VDS4Gamepad
-        def push(self, state):
-            if not state.simulation_mode:
-                return
-            self.pad.right_joystick_float(x_value_float=state.rx,
-                                          y_value_float=-state.ry)
-            self.pad.left_trigger_float(value_float=state.l2)
-            self.pad.right_trigger_float(value_float=state.r2)
-            self.pad.update()
+For a real pad on Windows, use ``python main.py --backend vigem``
+(see backend/vigem_backend.py).
 """
 
 from __future__ import annotations

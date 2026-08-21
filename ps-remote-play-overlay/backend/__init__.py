@@ -1,8 +1,8 @@
 """
 Backend package.
 
-Default factory returns SimulationBackend. Replace create_backend() or
-pass a custom instance into the app when you add a real virtual pad.
+Default factory returns SimulationBackend. Pass ``vigem`` / ``vigem-ds4``
+/ ``vigem-x360`` on Windows once ViGEmBus + vgamepad are installed.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ __all__ = [
     "VirtualControllerBackend",
     "NullBackend",
     "SimulationBackend",
+    "ViGEmBackend",
     "create_backend",
 ]
 
@@ -27,14 +28,32 @@ def create_backend(kind: str = "simulation") -> VirtualControllerBackend:
     kind:
       - "simulation" (default): logs frames when simulation mode is on
       - "null": never emits output
-      - anything else: raises BackendError (hook point for future drivers)
+      - "vigem" / "vigem-ds4": virtual DualShock 4 via ViGEmBus
+      - "vigem-x360": virtual Xbox 360 via ViGEmBus
     """
     key = (kind or "simulation").strip().lower()
     if key in {"simulation", "sim"}:
         return SimulationBackend()
     if key in {"null", "none", "ui"}:
         return NullBackend()
+    if key in {"vigem", "vigem-ds4", "ds4", "dualshock"}:
+        from .vigem_backend import ViGEmBackend
+
+        return ViGEmBackend(pad_type="ds4")
+    if key in {"vigem-x360", "x360", "xbox"}:
+        from .vigem_backend import ViGEmBackend
+
+        return ViGEmBackend(pad_type="x360")
     raise BackendError(
         f"Unknown backend '{kind}'. "
-        "Implement VirtualControllerBackend and register it in create_backend()."
+        "Use simulation, null, vigem, vigem-ds4, or vigem-x360."
     )
+
+
+def __getattr__(name: str):
+    # Lazy export so importing backend does not require vgamepad on Linux.
+    if name == "ViGEmBackend":
+        from .vigem_backend import ViGEmBackend
+
+        return ViGEmBackend
+    raise AttributeError(name)

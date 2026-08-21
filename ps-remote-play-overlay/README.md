@@ -58,6 +58,8 @@ python main.py --backend null
 |---------------|-----------|
 | `simulation`  | Default. When **Simulation mode** is checked, each tick logs frames that would be sent to a virtual pad. |
 | `null`        | UI only. Never emits output. |
+| `vigem` / `vigem-ds4` | **Real** virtual DualShock 4 via ViGEmBus + `vgamepad` (Windows). |
+| `vigem-x360`  | **Real** virtual Xbox 360 pad via ViGEmBus. |
 
 ---
 
@@ -92,6 +94,7 @@ ps-remote-play-overlay/
 │   ├── base.py             # VirtualControllerBackend ABC
 │   ├── null_backend.py     # No-op backend
 │   ├── simulation_backend.py
+│   ├── vigem_backend.py    # Real DS4 / X360 via ViGEmBus + vgamepad
 │   └── __init__.py         # create_backend() factory
 ├── overlay/
 │   ├── app.py              # Wires UI + backend + scripts + tick loop
@@ -142,6 +145,7 @@ The original sandbox is JavaScript/Three.js (`vendor/aim-assist-sandbox/`). The 
 | **Upload .py…** | Copies a Python aim script into `scripts/uploaded/` and loads it |
 | **Import folder…** | Copies an `aim-assist-sandbox` tree into `vendor/` (must contain `js/aimAssist.js`) and activates the Python port |
 | **Drive stick from loaded script** | Enables the host: mock targets → script → RX/RY each tick |
+| **On lock: press L2** | While locked, sets L2 = 1.0 |
 | **On lock: press R2** | While locked, sets R2 = 1.0 (auto-fire for testing) |
 | **On lock: compensate recoil** | Adds a downward + sway stick bias while firing (tunable V/H) |
 
@@ -179,6 +183,27 @@ def create_script():
 ```
 
 Scripts receive normalized camera/target frames from `aimbridge` (or a future adapter). They must not read game memory — feed data in through the frame API.
+
+---
+
+## Real virtual controller (ViGEm)
+
+On Windows you can emit a real DualShock 4 that PS Remote Play can see:
+
+1. Install **ViGEmBus**: https://github.com/nefarius/ViGEmBus/releases  
+2. `pip install -r requirements.txt` (pulls in `vgamepad` on Windows)  
+3. Run:
+
+```bat
+python main.py --backend vigem
+```
+
+4. Check **Simulation mode (send controller output)** in the panel — that gate must be on for axes to be pushed.  
+5. In PS Remote Play / Windows Game Controllers, confirm a virtual DS4 appears.
+
+Use `--backend vigem-x360` for an Xbox 360 virtual pad instead.
+
+> Still true: the aim script only locks **mock** targets inside the overlay. ViGEm sends whatever RX/RY/L2/R2 the overlay currently holds (sliders, shortcuts, or script). It does not detect enemies inside the Remote Play video.
 
 ---
 

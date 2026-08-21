@@ -57,6 +57,8 @@ class BackendTests(unittest.TestCase):
     def test_factory(self) -> None:
         self.assertEqual(create_backend("simulation").name, "simulation")
         self.assertEqual(create_backend("null").name, "null")
+        self.assertEqual(create_backend("vigem").name, "vigem-ds4")
+        self.assertEqual(create_backend("vigem-x360").name, "vigem-x360")
 
     def test_simulation_only_pushes_when_enabled(self) -> None:
         backend = SimulationBackend()
@@ -71,6 +73,51 @@ class BackendTests(unittest.TestCase):
         assert backend.last_frame is not None
         self.assertEqual(backend.last_frame.rx, 0.5)
         backend.disconnect()
+
+    def test_vigem_push_with_fake_pad(self) -> None:
+        from backend.vigem_backend import ViGEmBackend
+
+        class FakePad:
+            def __init__(self) -> None:
+                self.calls: list[tuple] = []
+
+            def right_joystick_float(self, x_value_float, y_value_float):
+                self.calls.append(("stick", x_value_float, y_value_float))
+
+            def left_trigger_float(self, value_float):
+                self.calls.append(("l2", value_float))
+
+            def right_trigger_float(self, value_float):
+                self.calls.append(("r2", value_float))
+
+            def update(self):
+                self.calls.append(("update",))
+
+            def reset(self):
+                self.calls.append(("reset",))
+
+        backend = ViGEmBackend(pad_type="ds4")
+        backend._connected = True
+        pad = FakePad()
+        backend._pad = pad
+        state = ControllerState(
+            rx=0.5, ry=0.25, l2=0.8, r2=1.0, simulation_mode=True
+        )
+        backend.push(state)
+        self.assertIn(("stick", 0.5, -0.25), pad.calls)  # Y flipped
+        self.assertIn(("l2", 0.8), pad.calls)
+        self.assertIn(("r2", 1.0), pad.calls)
+        self.assertIn(("update",), pad.calls)
+
+        # When simulation mode turns off, pad is rested once.
+        state.simulation_mode = False
+        pad.calls.clear()
+        backend.push(state)
+        stick_calls = [c for c in pad.calls if c[0] == "stick"]
+        self.assertTrue(stick_calls)
+        self.assertAlmostEqual(stick_calls[0][1], 0.0)
+        self.assertAlmostEqual(stick_calls[0][2], 0.0)
+        self.assertIn(("update",), pad.calls)
 
 
 if __name__ == "__main__":
