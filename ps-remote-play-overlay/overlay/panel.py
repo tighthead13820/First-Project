@@ -117,6 +117,7 @@ class ControlPanel(QWidget):
     request_load_builtin = Signal()
     request_import_sandbox = Signal()
     script_enabled_changed = Signal(bool)
+    fire_options_changed = Signal()
 
     def __init__(self, state: ControllerState) -> None:
         super().__init__()
@@ -187,6 +188,38 @@ class ControlPanel(QWidget):
         self.script_check = QCheckBox("Drive stick from loaded script")
         script_layout.addWidget(self.script_check)
 
+        self.auto_r2_check = QCheckBox("On lock: press R2 (auto-fire)")
+        self.auto_r2_check.setChecked(True)
+        self.auto_r2_check.setToolTip(
+            "While the script has a target locked, set R2 = 1.0"
+        )
+        script_layout.addWidget(self.auto_r2_check)
+
+        self.recoil_check = QCheckBox("On lock: compensate recoil")
+        self.recoil_check.setChecked(True)
+        self.recoil_check.setToolTip(
+            "While firing, add a downward + sway stick bias (test pattern)"
+        )
+        script_layout.addWidget(self.recoil_check)
+
+        recoil_row = QHBoxLayout()
+        recoil_row.addWidget(QLabel("Recoil V"))
+        self.recoil_v_spin = QDoubleSpinBox()
+        self.recoil_v_spin.setRange(0.0, 1.0)
+        self.recoil_v_spin.setSingleStep(0.05)
+        self.recoil_v_spin.setValue(0.35)
+        self.recoil_v_spin.setFixedWidth(72)
+        recoil_row.addWidget(self.recoil_v_spin)
+        recoil_row.addWidget(QLabel("H"))
+        self.recoil_h_spin = QDoubleSpinBox()
+        self.recoil_h_spin.setRange(0.0, 1.0)
+        self.recoil_h_spin.setSingleStep(0.01)
+        self.recoil_h_spin.setValue(0.08)
+        self.recoil_h_spin.setFixedWidth(72)
+        recoil_row.addWidget(self.recoil_h_spin)
+        recoil_row.addStretch(1)
+        script_layout.addLayout(recoil_row)
+
         btn_row = QHBoxLayout()
         self.upload_btn = QPushButton("Upload .py…")
         self.builtin_btn = QPushButton("Load sandbox")
@@ -234,6 +267,10 @@ class ControlPanel(QWidget):
         self.r2_row.value_changed.connect(self._on_r2)
         self.sim_check.toggled.connect(self._on_sim_toggled)
         self.script_check.toggled.connect(self._on_script_toggled)
+        self.auto_r2_check.toggled.connect(self._on_fire_options)
+        self.recoil_check.toggled.connect(self._on_fire_options)
+        self.recoil_v_spin.valueChanged.connect(self._on_fire_options)
+        self.recoil_h_spin.valueChanged.connect(self._on_fire_options)
         self.upload_btn.clicked.connect(self.request_upload_script.emit)
         self.builtin_btn.clicked.connect(self.request_load_builtin.emit)
         self.import_btn.clicked.connect(self.request_import_sandbox.emit)
@@ -330,6 +367,19 @@ class ControlPanel(QWidget):
         if self._syncing:
             return
         self.script_enabled_changed.emit(checked)
+
+    def _on_fire_options(self, *_args) -> None:
+        if self._syncing:
+            return
+        self.fire_options_changed.emit()
+
+    def fire_option_values(self) -> dict[str, bool | float]:
+        return {
+            "auto_fire_r2": self.auto_r2_check.isChecked(),
+            "recoil_compensate": self.recoil_check.isChecked(),
+            "recoil_vertical": float(self.recoil_v_spin.value()),
+            "recoil_horizontal": float(self.recoil_h_spin.value()),
+        }
 
     def _reset_stick(self) -> None:
         self._state.reset_right_stick()

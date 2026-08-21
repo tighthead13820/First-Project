@@ -74,8 +74,51 @@ class ScriptHost:
         if self.script is not None:
             self.script.reset()
         if not self.enabled:
-            # Return stick to centre when disabling script drive.
+            # Return stick + trigger to rest when disabling script drive.
             self.state.set_right_stick(0.0, 0.0)
+            self.state.set_r2(0.0)
+
+    def apply_fire_options(
+        self,
+        *,
+        auto_fire_r2: bool | None = None,
+        recoil_compensate: bool | None = None,
+        recoil_vertical: float | None = None,
+        recoil_horizontal: float | None = None,
+    ) -> None:
+        """Push panel toggles into the loaded script when it exposes settings."""
+        script = self.script
+        settings = getattr(script, "settings", None) if script is not None else None
+        if settings is None:
+            return
+        if auto_fire_r2 is not None and hasattr(settings, "auto_fire_r2"):
+            settings.auto_fire_r2 = bool(auto_fire_r2)
+        if recoil_compensate is not None and hasattr(settings, "recoil_compensate"):
+            settings.recoil_compensate = bool(recoil_compensate)
+        if recoil_vertical is not None and hasattr(settings, "recoil_vertical"):
+            settings.recoil_vertical = float(recoil_vertical)
+        if recoil_horizontal is not None and hasattr(settings, "recoil_horizontal"):
+            settings.recoil_horizontal = float(recoil_horizontal)
+        if script is not None:
+            # Restart fire timer so ramp feels consistent after option changes.
+            if hasattr(script, "_fire_time"):
+                script._fire_time = 0.0  # noqa: SLF001 — intentional reset
+
+    def fire_options(self) -> dict[str, bool | float]:
+        settings = getattr(self.script, "settings", None) if self.script else None
+        if settings is None:
+            return {
+                "auto_fire_r2": True,
+                "recoil_compensate": True,
+                "recoil_vertical": 0.35,
+                "recoil_horizontal": 0.08,
+            }
+        return {
+            "auto_fire_r2": bool(getattr(settings, "auto_fire_r2", True)),
+            "recoil_compensate": bool(getattr(settings, "recoil_compensate", True)),
+            "recoil_vertical": float(getattr(settings, "recoil_vertical", 0.35)),
+            "recoil_horizontal": float(getattr(settings, "recoil_horizontal", 0.08)),
+        }
 
     def tick(self, dt: float) -> None:
         if not self.enabled or self.script is None:

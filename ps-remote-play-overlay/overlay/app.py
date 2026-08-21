@@ -63,6 +63,19 @@ class OverlayApp:
         self.panel.request_load_builtin.connect(self._on_load_builtin)
         self.panel.request_import_sandbox.connect(self._on_import_sandbox)
         self.panel.script_enabled_changed.connect(self._on_script_enabled)
+        self.panel.fire_options_changed.connect(self._on_fire_options)
+
+    def _sync_fire_options_to_script(self) -> None:
+        opts = self.panel.fire_option_values()
+        self.scripts.apply_fire_options(
+            auto_fire_r2=bool(opts["auto_fire_r2"]),
+            recoil_compensate=bool(opts["recoil_compensate"]),
+            recoil_vertical=float(opts["recoil_vertical"]),
+            recoil_horizontal=float(opts["recoil_horizontal"]),
+        )
+
+    def _on_fire_options(self) -> None:
+        self._sync_fire_options_to_script()
 
     def _on_upload_script(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -78,6 +91,7 @@ class OverlayApp:
         except ScriptLoadError as exc:
             QMessageBox.warning(self.panel, "Upload failed", str(exc))
             return
+        self._sync_fire_options_to_script()
         self._refresh_script_labels(msg)
 
     def _on_load_builtin(self) -> None:
@@ -86,6 +100,7 @@ class OverlayApp:
         except ScriptLoadError as exc:
             QMessageBox.warning(self.panel, "Load failed", str(exc))
             return
+        self._sync_fire_options_to_script()
         self._refresh_script_labels(msg)
 
     def _on_import_sandbox(self) -> None:
@@ -101,11 +116,13 @@ class OverlayApp:
         except ScriptLoadError as exc:
             QMessageBox.warning(self.panel, "Import failed", str(exc))
             return
+        self._sync_fire_options_to_script()
         self._refresh_script_labels(msg)
 
     def _on_script_enabled(self, enabled: bool) -> None:
         try:
             self.scripts.set_enabled(enabled)
+            self._sync_fire_options_to_script()
         except ScriptLoadError as exc:
             self.panel.set_script_enabled(False)
             QMessageBox.warning(self.panel, "Script enable failed", str(exc))

@@ -13,7 +13,7 @@ UI_TICK_MS = 33  # ~30 Hz — fine for testing; raise for smoother feel.
 
 # Default window geometry.
 PANEL_WIDTH = 340
-PANEL_HEIGHT = 620
+PANEL_HEIGHT = 700
 HUD_WIDTH = 220
 HUD_HEIGHT = 120
 

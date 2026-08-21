@@ -142,6 +142,8 @@ The original sandbox is JavaScript/Three.js (`vendor/aim-assist-sandbox/`). The 
 | **Upload .py…** | Copies a Python aim script into `scripts/uploaded/` and loads it |
 | **Import folder…** | Copies an `aim-assist-sandbox` tree into `vendor/` (must contain `js/aimAssist.js`) and activates the Python port |
 | **Drive stick from loaded script** | Enables the host: mock targets → script → RX/RY each tick |
+| **On lock: press R2** | While locked, sets R2 = 1.0 (auto-fire for testing) |
+| **On lock: compensate recoil** | Adds a downward + sway stick bias while firing (tunable V/H) |
 
 ### Quick try
 
