@@ -21,10 +21,16 @@ export class UI {
     const bind = (id, apply) => {
       const el = document.getElementById(id);
       el.addEventListener("input", () => apply(el));
+      // Sync initial DOM state into AimAssist (checkboxes / ranges).
+      apply(el);
     };
 
     bind("aim-assist-enabled", (el) => {
       this.aimAssist.enabled = el.checked;
+    });
+
+    bind("snap-aim-debug", (el) => {
+      this.aimAssist.snapAimDebug = el.checked;
     });
 
     bind("fov", (el) => {
@@ -32,10 +38,24 @@ export class UI {
       document.getElementById("fov-value").textContent = el.value;
     });
 
-    bind("smoothing", (el) => {
-      this.aimAssist.smoothing = parseFloat(el.value);
-      document.getElementById("smoothing-value").textContent = el.value;
+    bind("response-speed", (el) => {
+      this.aimAssist.responseSpeed = parseFloat(el.value);
+      document.getElementById("response-speed-value").textContent = el.value;
     });
+
+    // Smoothing is legacy-only: do not auto-apply on init (would overwrite responseSpeed).
+    const smoothingEl = document.getElementById("smoothing");
+    smoothingEl.addEventListener("input", () => {
+      this.aimAssist.smoothing = parseFloat(smoothingEl.value);
+      document.getElementById("smoothing-value").textContent = smoothingEl.value;
+      const mapped = 1 + this.aimAssist.smoothing * 39;
+      this.aimAssist.responseSpeed = mapped;
+      const rs = document.getElementById("response-speed");
+      rs.value = String(mapped);
+      document.getElementById("response-speed-value").textContent =
+        mapped.toFixed(1);
+    });
+    document.getElementById("smoothing-value").textContent = smoothingEl.value;
 
     bind("target-bone", (el) => {
       this.aimAssist.targetBone = el.value;
@@ -72,6 +92,10 @@ export class UI {
     document.getElementById("debug-log-pipeline").addEventListener("click", () => {
       this.aimAssist.logPipelineOnce();
     });
+    
+    // Initialize snap-aim state from checkbox
+    const snapCheckbox = document.getElementById("snap-aim-debug");
+    this.aimAssist.snapAimDebug = snapCheckbox.checked;
   }
 
   resizeOverlay() {

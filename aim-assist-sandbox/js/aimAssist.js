@@ -3,7 +3,8 @@ import {
   forwardFromAngles,
   anglesFromDirection,
   angleBetween,
-  lerpAngle,
+  angleDelta,
+  expSmoothAngle,
   getBoneWorldPosition,
   predictPosition,
 } from "./math.js";
@@ -12,78 +13,78 @@ import {
  * Aim-assist pipeline (each frame):
  *
  * 1. Build camera forward vector from current yaw/pitch.
- * 2. For each target within maxRange:
- *      a. Compute aim point (head/chest, optionally predicted).
- *      b. Build direction vector: aimPoint - cameraPos.
- *      c. Check cone: angle(forward, direction) <= fov/2.
- * 3. Among valid targets, pick the one with smallest angle to crosshair.
- * 4. Compute desired yaw/pitch toward that aim point.
- * 5. Smoothly interpolate current yaw/pitch toward desired values.
+ * 2. Select best target inside FOV (unchanged detection logic).
+ * 3. Re-read the CURRENT aim point on the selected target (no frozen coords).
+ * 4. Desired yaw/pitch from camera → aim point.
+ * 5. Snap OR exponential-smooth toward those angles (frame-rate independent).
+ * 6. Return authoritative yaw/pitch for main.js to apply once.
  */
 
 const _toTarget = new THREE.Vector3();
 const _forward = new THREE.Vector3();
 const _aimPoint = new THREE.Vector3();
 const _angles = { yaw: 0, pitch: 0 };
+const _postForward = new THREE.Vector3();
 
 export class AimAssist {
   constructor() {
     this.enabled = true;
     /** Full cone width of the aim-assist FOV, in degrees. */
     this.fovDeg = 12;
-    /** Interpolation factor per frame (0–1). Lower = smoother. */
+    /**
+     * @deprecated Prefer responseSpeed. Kept wired for the UI slider as a
+     * coarse fallback mapper; actuation uses responseSpeed + dt.
+     */
     this.smoothing = 0.15;
+    /**
+     * Exponential response speed (1/s). Typical useful range: 1–40.
+     *   1–3 slow · 5–10 gentle · 12–20 responsive · 25–40 very fast
+     */
+    this.responseSpeed = 14;
     this.targetBone = "chest";
     this.maxRange = 50;
     this.predictionEnabled = false;
     this.projectileSpeed = 200;
 
-    /**
-     * When true, skip FOV / range filters and always lock the first target.
-     * Used to verify HUD/marker wiring independently of selection maths.
-     */
-    this.debugForceFirstTarget = false;
+    /** Bypass smoothing — apply exact desired yaw/pitch every frame. */
+    this.snapAimDebug = false;
 
-    /** When true, ignore maxRange so only the angular FOV test remains. */
+    this.debugForceFirstTarget = false;
     this.debugIgnoreRange = false;
 
-    /** Currently locked target reference, or null. */
     this.selectedTarget = null;
-    /** Per-target evaluation snapshot for debug overlay / colour states. */
     this.evaluations = [];
-    /** Camera/forward snapshot from last update (for debug lines / logs). */
     this.lastCameraDebug = null;
-    /** Debug readout for the HUD. */
+    /** Tracking diagnostics for the HUD. */
+    this.tracking = null;
     this.debugInfo = "";
   }
 
   /**
-   * Run one aim-assist tick.
-   *
-   * @param {object} cameraState - { position: Vector3, yaw: number, pitch: number }
-   * @param {Array} targets - moving dummy targets
-   * @returns {{ yaw: number, pitch: number }} updated camera angles
+   * @param {object} cameraState - { position, yaw, pitch }
+   * @param {Array} targets
+   * @param {number} dt - seconds since last frame (required for smooth mode)
    */
-  update(cameraState, targets) {
+  update(cameraState, targets, dt = 1 / 60) {
     const { position, yaw, pitch } = cameraState;
 
     if (!this.enabled) {
       this.selectedTarget = null;
       this.evaluations = [];
+      this.tracking = null;
       this.debugInfo = "Aim assist disabled";
       return { yaw, pitch };
     }
 
     forwardFromAngles(yaw, pitch, _forward);
 
-    // fovDeg is the FULL cone width; compare against half in radians.
     const fovHalfRad = (this.fovDeg * Math.PI) / 180 / 2;
     const evaluations = [];
     let bestTarget = null;
     let bestAngle = Infinity;
-    let bestAimPoint = null;
     let nearest = null;
 
+    // --- Detection (unchanged logic) ---
     for (const target of targets) {
       getBoneWorldPosition(target, this.targetBone, _aimPoint);
 
@@ -123,23 +124,17 @@ export class AimAssist {
       };
       evaluations.push(evaluation);
 
-      if (!nearest || angle < nearest.angle) {
-        nearest = evaluation;
-      }
+      if (!nearest || angle < nearest.angle) nearest = evaluation;
 
       if (passes && angle < bestAngle) {
         bestAngle = angle;
         bestTarget = target;
-        bestAimPoint = aimPoint;
       }
     }
 
-    // Temporary isolation mode: prove rendering works even if FOV maths fail.
     if (this.debugForceFirstTarget && targets.length > 0) {
-      const forced = evaluations[0];
-      bestTarget = forced.target;
-      bestAimPoint = forced.aimPoint;
-      bestAngle = forced.angle;
+      bestTarget = evaluations[0].target;
+      bestAngle = evaluations[0].angle;
     }
 
     this.evaluations = evaluations;
@@ -153,88 +148,121 @@ export class AimAssist {
       fovHalfDeg: (fovHalfRad * 180) / Math.PI,
     };
 
-    this.debugInfo = this.buildDebugInfo(nearest, bestTarget, bestAngle, bestAimPoint);
-
-    if (!bestTarget || !bestAimPoint) {
+    if (!bestTarget) {
+      this.tracking = null;
+      this.debugInfo = this.buildDebugInfo(nearest, null);
       return { yaw, pitch };
     }
 
-    // Direction from camera to aim point → desired yaw/pitch
-    _toTarget.copy(bestAimPoint).sub(position).normalize();
+    // --- Actuation: ALWAYS re-read the live aim point (never freeze coords) ---
+    getBoneWorldPosition(bestTarget, this.targetBone, _aimPoint);
+    if (this.predictionEnabled) {
+      predictPosition(
+        _aimPoint,
+        bestTarget.velocity,
+        position,
+        this.projectileSpeed,
+        _aimPoint
+      );
+    }
+    const liveAimPoint = _aimPoint.clone();
+
+    _toTarget.copy(liveAimPoint).sub(position).normalize();
     anglesFromDirection(_toTarget, _angles);
+    const desiredYaw = _angles.yaw;
+    const desiredPitch = _angles.pitch;
 
-    const newYaw = lerpAngle(yaw, _angles.yaw, this.smoothing);
-    const newPitch = lerpAngle(pitch, _angles.pitch, this.smoothing);
+    const yawError = angleDelta(yaw, desiredYaw);
+    const pitchError = angleDelta(pitch, desiredPitch);
 
+    let newYaw;
+    let newPitch;
+    if (this.snapAimDebug) {
+      // Zero-smoothing SNAP: exact look-at angles every frame.
+      newYaw = desiredYaw;
+      newPitch = desiredPitch;
+    } else {
+      // Frame-rate-independent exponential smoothing.
+      newYaw = expSmoothAngle(yaw, desiredYaw, this.responseSpeed, dt);
+      newPitch = expSmoothAngle(pitch, desiredPitch, this.responseSpeed, dt);
+    }
+
+    // Post-actuation residual: angle between NEW forward and target direction.
+    forwardFromAngles(newYaw, newPitch, _postForward);
+    const postError = angleBetween(_postForward, _toTarget);
+    const preError = angleBetween(_forward, _toTarget);
+
+    this.tracking = {
+      targetId: bestTarget.id,
+      aimPoint: liveAimPoint,
+      desiredDirection: _toTarget.clone(),
+      currentYaw: yaw,
+      currentPitch: pitch,
+      desiredYaw,
+      desiredPitch,
+      newYaw,
+      newPitch,
+      yawErrorDeg: (yawError * 180) / Math.PI,
+      pitchErrorDeg: (pitchError * 180) / Math.PI,
+      preErrorDeg: (preError * 180) / Math.PI,
+      postErrorDeg: (postError * 180) / Math.PI,
+      responseSpeed: this.responseSpeed,
+      snap: this.snapAimDebug,
+      tracking: true,
+    };
+
+    this.debugInfo = this.buildDebugInfo(nearest, bestTarget);
     return { yaw: newYaw, pitch: newPitch };
   }
 
-  buildDebugInfo(nearest, bestTarget, bestAngle, bestAimPoint) {
-    const cam = this.lastCameraDebug;
+  buildDebugInfo(nearest, bestTarget) {
+    const t = this.tracking;
     const lines = [];
 
-    if (cam) {
+    if (bestTarget && t) {
+      lines.push(`Target: ${t.targetId}`);
+      lines.push(`Current error: ${t.preErrorDeg.toFixed(2)}°`);
+      lines.push(`Yaw error: ${t.yawErrorDeg.toFixed(2)}°`);
+      lines.push(`Pitch error: ${t.pitchErrorDeg.toFixed(2)}°`);
       lines.push(
-        `Cam: (${cam.position.x.toFixed(1)}, ${cam.position.y.toFixed(1)}, ${cam.position.z.toFixed(1)})`
+        `Desired yaw: ${((t.desiredYaw * 180) / Math.PI).toFixed(2)}°`
       );
       lines.push(
-        `Fwd: (${cam.forward.x.toFixed(2)}, ${cam.forward.y.toFixed(2)}, ${cam.forward.z.toFixed(2)})`
+        `Actual yaw: ${((t.currentYaw * 180) / Math.PI).toFixed(2)}°`
       );
       lines.push(
-        `FOV: ${cam.fovDeg.toFixed(1)}° (half ${cam.fovHalfDeg.toFixed(2)}°)`
-      );
-    }
-
-    if (nearest) {
-      lines.push(
-        `Nearest: ${nearest.target.id}  ∠${nearest.angleDeg.toFixed(2)}°  ` +
-          `dot=${nearest.dot.toFixed(3)}  ` +
-          (nearest.insideFov ? "IN FOV" : "OUTSIDE FOV")
+        `Desired pitch: ${((t.desiredPitch * 180) / Math.PI).toFixed(2)}°`
       );
       lines.push(
-        `  aim (${nearest.aimPoint.x.toFixed(1)}, ${nearest.aimPoint.y.toFixed(1)}, ${nearest.aimPoint.z.toFixed(1)})  ` +
-          `d=${nearest.distance.toFixed(1)}m`
+        `Actual pitch: ${((t.currentPitch * 180) / Math.PI).toFixed(2)}°`
       );
+      lines.push(
+        `Post-apply error: ${t.postErrorDeg.toFixed(3)}°`
+      );
+      lines.push(`Response speed: ${t.responseSpeed}`);
+      lines.push(`Tracking: YES`);
+      lines.push(`Snap test: ${t.snap ? "ON" : "OFF"}`);
     } else {
-      lines.push("Nearest: none");
-    }
-
-    if (bestTarget && bestAimPoint) {
-      lines.push(
-        `Selected: ${bestTarget.id}  ∠${((bestAngle * 180) / Math.PI).toFixed(2)}°  bone=${this.targetBone}`
-      );
-      if (this.debugForceFirstTarget) lines.push("Force-first DEBUG ON");
-    } else {
-      lines.push("Selected: none");
+      lines.push("Tracking: NO");
+      lines.push(`Snap test: ${this.snapAimDebug ? "ON" : "OFF"}`);
+      if (nearest) {
+        lines.push(
+          `Nearest: ${nearest.target.id} ∠${nearest.angleDeg.toFixed(2)}° ` +
+            (nearest.insideFov ? "IN FOV" : "OUTSIDE")
+        );
+      } else {
+        lines.push("Nearest: none");
+      }
     }
 
     return lines.join("\n");
   }
 
-  /** One-shot console dump of the full selection pipeline. */
   logPipelineOnce() {
-    const cam = this.lastCameraDebug;
-    if (!cam) {
-      console.warn("[aim] no camera debug yet");
-      return;
-    }
-    console.group("[aim] selection pipeline");
-    console.log("camera position", cam.position);
-    console.log("camera forward", cam.forward);
-    console.log("yaw/pitch (rad)", cam.yaw, cam.pitch);
-    console.log("FOV deg / half", cam.fovDeg, cam.fovHalfDeg);
-    for (const ev of this.evaluations) {
-      console.log(ev.target.id, {
-        aimPoint: ev.aimPoint,
-        direction: ev.direction,
-        dot: ev.dot,
-        angleDeg: ev.angleDeg,
-        inRange: ev.inRange,
-        insideFov: ev.insideFov,
-        passes: ev.passes,
-      });
-    }
+    console.group("[aim] tracking / selection");
+    console.log("tracking", this.tracking);
     console.log("selected", this.selectedTarget?.id ?? null);
+    console.log("evaluations", this.evaluations);
     console.groupEnd();
   }
 }

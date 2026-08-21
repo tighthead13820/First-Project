@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { AimAssist } from "./aimAssist.js";
 import { createTargets } from "./targets.js";
 import { UI } from "./ui.js";
+import { forwardFromAngles } from "./math.js";
 
 // ---------------------------------------------------------------------------
 // Scene setup
@@ -24,7 +25,6 @@ const camera = new THREE.PerspectiveCamera(
   200
 );
 
-// Ground
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(60, 60),
   new THREE.MeshStandardMaterial({ color: 0x2a2a38, roughness: 0.9 })
@@ -32,82 +32,22 @@ const ground = new THREE.Mesh(
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
+scene.add(new THREE.GridHelper(60, 30, 0x444466, 0x333344));
 
-// Grid helper for spatial reference
-const grid = new THREE.GridHelper(60, 30, 0x444466, 0x333344);
-scene.add(grid);
-
-// Lighting
-const ambient = new THREE.AmbientLight(0x404060, 0.6);
-scene.add(ambient);
+scene.add(new THREE.AmbientLight(0x404060, 0.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.0);
 sun.position.set(10, 20, 5);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 scene.add(sun);
 
-// Targets
 const targets = createTargets(scene);
-
-// Aim assist + UI
 const aimAssist = new AimAssist();
 const ui = new UI(aimAssist, camera);
 
-// Debug aim lines (camera → each target aim point)
-const debugLineMaterialOutside = new THREE.LineBasicMaterial({ color: 0x64748b });
-const debugLineMaterialInside = new THREE.LineBasicMaterial({ color: 0xfbbf24 });
-const debugLineMaterialSelected = new THREE.LineBasicMaterial({ color: 0x44ff88 });
-const debugLines = targets.map(() => {
-  const geo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(),
-    new THREE.Vector3(),
-  ]);
-  const line = new THREE.Line(geo, debugLineMaterialOutside);
-  line.visible = false;
-  scene.add(line);
-  return line;
-});
-
-function updateDebugLines() {
-  const show = ui.drawAimLines;
-  const camPos = player.position;
-  for (let i = 0; i < targets.length; i++) {
-    const line = debugLines[i];
-    const ev = aimAssist.evaluations[i];
-    if (!show || !ev) {
-      line.visible = false;
-      continue;
-    }
-    const positions = line.geometry.attributes.position;
-    positions.setXYZ(0, camPos.x, camPos.y, camPos.z);
-    positions.setXYZ(1, ev.aimPoint.x, ev.aimPoint.y, ev.aimPoint.z);
-    positions.needsUpdate = true;
-    line.geometry.computeBoundingSphere();
-    line.visible = true;
-    if (ev.target === aimAssist.selectedTarget) {
-      line.material = debugLineMaterialSelected;
-    } else if (ev.insideFov) {
-      line.material = debugLineMaterialInside;
-    } else {
-      line.material = debugLineMaterialOutside;
-    }
-  }
-}
-
-function updateTargetColours() {
-  for (const ev of aimAssist.evaluations) {
-    if (ev.target === aimAssist.selectedTarget) {
-      ev.target.setVisualState("selected");
-    } else if (ev.insideFov && ev.inRange) {
-      ev.target.setVisualState("insideFov");
-    } else {
-      ev.target.setVisualState("valid");
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
-// First-person camera state
+// ONE authoritative look state. Mouse and aim-assist both write HERE.
+// Camera rotation is applied ONCE at the end of the frame.
 // ---------------------------------------------------------------------------
 
 const player = {
@@ -119,7 +59,9 @@ const player = {
 
 const PITCH_LIMIT = (89 * Math.PI) / 180;
 
-// Pointer lock for mouse look
+/** Buffered mouse deltas — applied once per frame before aim-assist. */
+const mouseDelta = { yaw: 0, pitch: 0 };
+
 let pointerLocked = false;
 
 renderer.domElement.addEventListener("click", () => {
@@ -133,12 +75,11 @@ document.addEventListener("pointerlockchange", () => {
 document.addEventListener("mousemove", (e) => {
   if (!pointerLocked) return;
   const sensitivity = 0.002;
-  player.yaw -= e.movementX * sensitivity;
-  player.pitch -= e.movementY * sensitivity;
-  player.pitch = THREE.MathUtils.clamp(player.pitch, -PITCH_LIMIT, PITCH_LIMIT);
+  // Accumulate only — do NOT write camera.rotation here.
+  mouseDelta.yaw -= e.movementX * sensitivity;
+  mouseDelta.pitch -= e.movementY * sensitivity;
 });
 
-// Keyboard movement
 const keys = {};
 document.addEventListener("keydown", (e) => {
   keys[e.code] = true;
@@ -146,6 +87,14 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   keys[e.code] = false;
 });
+
+function consumeMouseLook() {
+  player.yaw += mouseDelta.yaw;
+  player.pitch += mouseDelta.pitch;
+  player.pitch = THREE.MathUtils.clamp(player.pitch, -PITCH_LIMIT, PITCH_LIMIT);
+  mouseDelta.yaw = 0;
+  mouseDelta.pitch = 0;
+}
 
 function updateMovement(dt) {
   const forward = new THREE.Vector3(
@@ -176,14 +125,124 @@ function updateMovement(dt) {
 
 function applyCameraTransform() {
   camera.position.copy(player.position);
-  // YXZ order: yaw around world Y, then pitch around local X
   camera.rotation.order = "YXZ";
   camera.rotation.y = player.yaw;
   camera.rotation.x = player.pitch;
 }
 
 // ---------------------------------------------------------------------------
-// Main loop
+// Debug visuals: target lines + camera forward ray + desired aim ray
+// ---------------------------------------------------------------------------
+
+const debugLineMaterialOutside = new THREE.LineBasicMaterial({ color: 0x64748b });
+const debugLineMaterialInside = new THREE.LineBasicMaterial({ color: 0xfbbf24 });
+const debugLineMaterialSelected = new THREE.LineBasicMaterial({ color: 0x44ff88 });
+const debugLines = targets.map(() => {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ]);
+  const line = new THREE.Line(geo, debugLineMaterialOutside);
+  line.visible = false;
+  scene.add(line);
+  return line;
+});
+
+function makeRay(color) {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color }));
+  line.visible = false;
+  scene.add(line);
+  return line;
+}
+
+const forwardRay = makeRay(0x60a5fa); // blue = current look
+const desiredRay = makeRay(0xf472b6); // pink = desired aim
+const aimPointMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.08, 8, 8),
+  new THREE.MeshBasicMaterial({ color: 0xf472b6 })
+);
+aimPointMarker.visible = false;
+scene.add(aimPointMarker);
+
+function setLineEndpoints(line, a, b) {
+  const pos = line.geometry.attributes.position;
+  pos.setXYZ(0, a.x, a.y, a.z);
+  pos.setXYZ(1, b.x, b.y, b.z);
+  pos.needsUpdate = true;
+  line.geometry.computeBoundingSphere();
+  line.visible = true;
+}
+
+function updateDebugLines() {
+  const show = ui.drawAimLines;
+  const camPos = player.position;
+
+  for (let i = 0; i < targets.length; i++) {
+    const line = debugLines[i];
+    const ev = aimAssist.evaluations[i];
+    if (!show || !ev) {
+      line.visible = false;
+      continue;
+    }
+    setLineEndpoints(line, camPos, ev.aimPoint);
+    if (ev.target === aimAssist.selectedTarget) {
+      line.material = debugLineMaterialSelected;
+    } else if (ev.insideFov) {
+      line.material = debugLineMaterialInside;
+    } else {
+      line.material = debugLineMaterialOutside;
+    }
+  }
+
+  if (!show) {
+    forwardRay.visible = false;
+    desiredRay.visible = false;
+    aimPointMarker.visible = false;
+    return;
+  }
+
+  // Current camera forward ray (from authoritative yaw/pitch AFTER aim update)
+  const fwd = forwardFromAngles(player.yaw, player.pitch);
+  setLineEndpoints(
+    forwardRay,
+    camPos,
+    {
+      x: camPos.x + fwd.x * 8,
+      y: camPos.y + fwd.y * 8,
+      z: camPos.z + fwd.z * 8,
+    }
+  );
+
+  const tracking = aimAssist.tracking;
+  if (tracking) {
+    const aim = tracking.aimPoint;
+    setLineEndpoints(desiredRay, camPos, aim);
+    aimPointMarker.position.copy(aim);
+    aimPointMarker.visible = true;
+  } else {
+    desiredRay.visible = false;
+    aimPointMarker.visible = false;
+  }
+}
+
+function updateTargetColours() {
+  for (const ev of aimAssist.evaluations) {
+    if (ev.target === aimAssist.selectedTarget) {
+      ev.target.setVisualState("selected");
+    } else if (ev.insideFov && ev.inRange) {
+      ev.target.setVisualState("insideFov");
+    } else {
+      ev.target.setVisualState("valid");
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main loop — single authority pipeline
 // ---------------------------------------------------------------------------
 
 const clock = new THREE.Clock();
@@ -192,21 +251,27 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
 
+  // 1. Mouse look into shared yaw/pitch (once)
+  consumeMouseLook();
+
+  // 2. Movement uses the same yaw
   updateMovement(dt);
 
+  // 3. Targets move
   for (const target of targets) {
     target.update(dt);
   }
 
-  // Aim assist adjusts yaw/pitch before camera is applied
-  const assisted = aimAssist.update(player, targets);
+  // 4. Aim assist reads + writes the SAME player.yaw / player.pitch
+  const assisted = aimAssist.update(player, targets, dt);
   player.yaw = assisted.yaw;
-  player.pitch = assisted.pitch;
+  player.pitch = THREE.MathUtils.clamp(assisted.pitch, -PITCH_LIMIT, PITCH_LIMIT);
+
+  // 5. Apply camera ONCE from authoritative state
+  applyCameraTransform();
 
   updateTargetColours();
   updateDebugLines();
-
-  applyCameraTransform();
 
   ui.drawFovOverlay();
   ui.updateReadout();

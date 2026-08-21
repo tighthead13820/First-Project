@@ -78,11 +78,25 @@ export function angleDelta(from, to) {
 }
 
 /**
- * Linear interpolation toward a target angle with shortest path.
+ * Frame-rate-independent exponential angle smoothing.
+ *
+ *   alpha = 1 - exp(-responseSpeed * dt)
+ *   new   = current + shortestDelta * alpha
+ *
+ * responseSpeed is in "response units" per second (higher = snappier).
+ * Do NOT use a fixed per-frame factor — that becomes tiny or huge with FPS.
+ */
+export function expSmoothAngle(current, target, responseSpeed, dt) {
+  const alpha = 1 - Math.exp(-Math.max(responseSpeed, 0) * Math.max(dt, 0));
+  return current + angleDelta(current, target) * alpha;
+}
+
+/**
+ * Legacy per-frame lerp (frame-rate dependent). Kept for reference/tests only.
  * smoothing in (0, 1]: higher = faster snap, lower = smoother glide.
  */
 export function lerpAngle(current, target, smoothing) {
-  return current + angleDelta(current, target) * smoothing;
+  return current + angleDelta(current, target) * clamp(smoothing, 0, 1);
 }
 
 /**
