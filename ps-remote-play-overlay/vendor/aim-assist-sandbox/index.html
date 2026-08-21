@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aim-Assist Target-Tracking Sandbox</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="hud">
+    <canvas id="fov-overlay"></canvas>
+    <div id="crosshair">+</div>
+    <div id="info-panel">
+      <h1>Aim-Assist Sandbox</h1>
+      <p class="hint">Click to capture mouse · WASD move · Space/Shift up/down · Esc release</p>
+      <div id="target-readout">No target selected</div>
+    </div>
+    <aside id="settings-panel">
+      <h2>Settings</h2>
+      <label>
+        Aim assist
+        <input type="checkbox" id="aim-assist-enabled" checked />
+      </label>
+      <label>
+        FOV (°)
+        <input type="range" id="fov" min="1" max="45" step="0.5" value="12" />
+        <span id="fov-value">12</span>
+      </label>
+      <label>
+        Smoothing
+        <input type="range" id="smoothing" min="0.01" max="1" step="0.01" value="0.15" />
+        <span id="smoothing-value">0.15</span>
+      </label>
+      <label>
+        Target bone
+        <select id="target-bone">
+          <option value="head">Head</option>
+          <option value="chest" selected>Chest</option>
+        </select>
+      </label>
+      <label>
+        Max range (m)
+        <input type="range" id="max-range" min="5" max="100" step="1" value="50" />
+        <span id="max-range-value">50</span>
+      </label>
+      <label>
+        Prediction
+        <input type="checkbox" id="prediction-enabled" />
+      </label>
+      <label>
+        Projectile speed (m/s)
+        <input type="range" id="projectile-speed" min="50" max="500" step="10" value="200" />
+        <span id="projectile-speed-value">200</span>
+      </label>
+    </aside>
+  </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.167.1/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

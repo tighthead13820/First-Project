@@ -14,7 +14,9 @@ This project does **not** inject into games or Remote Play. It is a local tester
 - **L2** and **R2** analog sliders (`0.0` … `1.0`)
 - Optional keyboard shortcuts that set values **only while keys are held**
 - **Simulation mode** toggle — when on, axes are pushed through the active backend
+- **Aim script loader** — upload a `.py` plugin, load the bundled sandbox port, or import an `aim-assist-sandbox` folder
 - Modular layout so a real virtual-pad backend can replace the simulator
+- Vendored copy of the first-person aim-assist sandbox under `vendor/aim-assist-sandbox/`
 
 ---
 
@@ -92,24 +94,89 @@ ps-remote-play-overlay/
 │   ├── simulation_backend.py
 │   └── __init__.py         # create_backend() factory
 ├── overlay/
-│   ├── app.py              # Wires UI + backend + tick loop
-│   ├── panel.py            # Movable control panel
+│   ├── app.py              # Wires UI + backend + scripts + tick loop
+│   ├── panel.py            # Movable control panel (+ script buttons)
 │   └── hud.py              # Transparent always-on-top readout
+├── scripts/
+│   ├── api.py              # AimScript plugin contract
+│   ├── loader.py           # Upload / import / builtin loaders
+│   ├── builtin_sandbox_aim.py  # Python port of aimAssist.js
+│   ├── example_circle.py   # Sample uploadable script
+│   └── uploaded/           # Copies of user-uploaded scripts
+├── aimbridge/
+│   ├── math3d.py           # Port of sandbox js/math.js
+│   ├── mock_scene.py       # Synthetic targets for script testing
+│   └── host.py             # Runs loaded script → drives stick
+├── vendor/
+│   └── aim-assist-sandbox/ # Original JS Three.js sandbox (reference)
 └── tests/
-    └── test_state.py       # Unit tests (no GUI)
+    ├── test_state.py
+    └── test_scripts.py
 ```
 
 ### How each module works
 
 1. **`controls/state.py`** — Holds `rx`, `ry`, `l2`, `r2`, and `simulation_mode`. Sliders and shortcuts write here (or layer overrides on top). Listeners refresh the UI.
 2. **`controls/keyboard.py`** — Application event filter. While a bound key is held, its axis dict is merged over the slider baseline each tick.
-3. **`overlay/panel.py`** — Always-on-top tool window with sliders, reset button, simulation checkbox, and a live text readout.
+3. **`overlay/panel.py`** — Always-on-top tool window with sliders, reset button, simulation checkbox, script upload/load controls, and live readouts.
 4. **`overlay/hud.py`** — Frameless translucent window that mirrors the effective axes.
-5. **`overlay/app.py`** — Creates Qt app, panel, HUD, keyboard filter, timer (~30 Hz), and calls `backend.push(...)`.
+5. **`overlay/app.py`** — Creates Qt app, panel, HUD, keyboard filter, script host, timer (~30 Hz), and calls `backend.push(...)`.
 6. **`backend/base.py`** — Abstract `connect` / `disconnect` / `push` API.
 7. **`backend/simulation_backend.py`** — Records and prints frames when simulation mode is on. Contains a commented sketch for a future ViGEm/`vgamepad` backend.
 8. **`backend/null_backend.py`** — Silent stub for UI dry-runs.
-9. **`config.py`** — Tunables only; no logic.
+9. **`scripts/`** — Plugin API + loader. Uploaded `.py` files must expose `create_script()` or a `Script` class.
+10. **`aimbridge/`** — Math port, mock target scene, and `ScriptHost` that feeds frames into the loaded script.
+11. **`config.py`** — Tunables only; no logic.
+
+---
+
+## Loading the aim-assist sandbox into the overlay
+
+The original sandbox is JavaScript/Three.js (`vendor/aim-assist-sandbox/`). The overlay runs a **Python port** of the same pipeline so it can drive stick axes inside PySide.
+
+### In the control panel
+
+| Button | What it does |
+|--------|----------------|
+| **Load sandbox** | Loads `scripts/builtin_sandbox_aim.py` (port of `js/aimAssist.js`) |
+| **Upload .py…** | Copies a Python aim script into `scripts/uploaded/` and loads it |
+| **Import folder…** | Copies an `aim-assist-sandbox` tree into `vendor/` (must contain `js/aimAssist.js`) and activates the Python port |
+| **Drive stick from loaded script** | Enables the host: mock targets → script → RX/RY each tick |
+
+### Quick try
+
+1. `python main.py`
+2. Click **Load sandbox**
+3. Check **Drive stick from loaded script**
+4. Optionally check **Simulation mode** to log outbound frames
+5. Watch RX/RY and the script debug panel track the mock dummies
+
+Upload the included sample instead:
+
+1. **Upload .py…** → choose `scripts/example_circle.py`
+2. Enable **Drive stick from loaded script**
+3. Stick oscillates in a circle (verifies upload wiring)
+
+### Writing your own script
+
+```python
+from scripts.api import AimFrame, StickCommand
+
+class Script:
+    name = "my-script"
+
+    def reset(self) -> None:
+        pass
+
+    def update(self, frame: AimFrame) -> StickCommand:
+        # frame.camera / frame.targets are sandbox-style samples
+        return StickCommand(rx=0.0, ry=0.0, debug="idle")
+
+def create_script():
+    return Script()
+```
+
+Scripts receive normalized camera/target frames from `aimbridge` (or a future adapter). They must not read game memory — feed data in through the frame API.
 
 ---
 
@@ -117,7 +184,7 @@ ps-remote-play-overlay/
 
 1. Open the control panel.
 2. Check **Simulation mode (send controller output)**.
-3. Move sliders or hold shortcuts.
+3. Move sliders, hold shortcuts, or enable a loaded aim script.
 4. With the default `simulation` backend, the console prints throttled lines such as:
 
    ```text
@@ -143,10 +210,10 @@ A commented example using `vgamepad` lives at the top of `backend/simulation_bac
 ## Tests
 
 ```bat
-python -m unittest tests.test_state -v
+python -m unittest tests.test_state tests.test_scripts -v
 ```
 
-These cover clamping, reset, listeners, override merging, and simulation gating — no display required.
+These cover clamping, reset, listeners, override merging, simulation gating, script upload, and the sandbox aim port — no display required.
 
 ---
 

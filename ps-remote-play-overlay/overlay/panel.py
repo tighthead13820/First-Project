@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+# Signals used by OverlayApp to open file dialogs / toggle the script host.
+
 import config
 from controls.state import ControllerState
 
@@ -110,6 +112,12 @@ class AxisSliderRow(QWidget):
 class ControlPanel(QWidget):
     """Movable always-on-top panel hosting stick / trigger controls."""
 
+    # Emitted when the user wants to load / toggle an aim script.
+    request_upload_script = Signal()
+    request_load_builtin = Signal()
+    request_import_sandbox = Signal()
+    script_enabled_changed = Signal(bool)
+
     def __init__(self, state: ControllerState) -> None:
         super().__init__()
         self._state = state
@@ -174,6 +182,42 @@ class ControlPanel(QWidget):
         sim_layout.addRow(self.backend_label)
         root.addWidget(sim_box)
 
+        script_box = QGroupBox("Aim script")
+        script_layout = QVBoxLayout(script_box)
+        self.script_check = QCheckBox("Drive stick from loaded script")
+        script_layout.addWidget(self.script_check)
+
+        btn_row = QHBoxLayout()
+        self.upload_btn = QPushButton("Upload .py…")
+        self.builtin_btn = QPushButton("Load sandbox")
+        self.import_btn = QPushButton("Import folder…")
+        self.upload_btn.setToolTip("Copy a Python aim script into scripts/uploaded/ and load it")
+        self.builtin_btn.setToolTip(
+            "Load the bundled Python port of vendor/aim-assist-sandbox/js/aimAssist.js"
+        )
+        self.import_btn.setToolTip(
+            "Point at an aim-assist-sandbox folder (must contain js/aimAssist.js)"
+        )
+        btn_row.addWidget(self.upload_btn)
+        btn_row.addWidget(self.builtin_btn)
+        btn_row.addWidget(self.import_btn)
+        script_layout.addLayout(btn_row)
+
+        self.script_status = QLabel("script: (none)")
+        self.script_status.setObjectName("hint")
+        self.script_status.setWordWrap(True)
+        script_layout.addWidget(self.script_status)
+
+        self.script_debug = QLabel("")
+        self.script_debug.setObjectName("live")
+        self.script_debug.setWordWrap(True)
+        self.script_debug.setMinimumHeight(72)
+        self.script_debug.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        script_layout.addWidget(self.script_debug)
+        root.addWidget(script_box)
+
         self.live_label = QLabel()
         self.live_label.setObjectName("live")
         self.live_label.setTextInteractionFlags(
@@ -189,6 +233,10 @@ class ControlPanel(QWidget):
         self.l2_row.value_changed.connect(self._on_l2)
         self.r2_row.value_changed.connect(self._on_r2)
         self.sim_check.toggled.connect(self._on_sim_toggled)
+        self.script_check.toggled.connect(self._on_script_toggled)
+        self.upload_btn.clicked.connect(self.request_upload_script.emit)
+        self.builtin_btn.clicked.connect(self.request_load_builtin.emit)
+        self.import_btn.clicked.connect(self.request_import_sandbox.emit)
         self._state.subscribe(self._on_state_changed)
         self._refresh_live(self._state)
 
@@ -278,8 +326,24 @@ class ControlPanel(QWidget):
             return
         self._state.set_simulation_mode(checked)
 
+    def _on_script_toggled(self, checked: bool) -> None:
+        if self._syncing:
+            return
+        self.script_enabled_changed.emit(checked)
+
     def _reset_stick(self) -> None:
         self._state.reset_right_stick()
+
+    def set_script_status(self, text: str) -> None:
+        self.script_status.setText(text)
+
+    def set_script_debug(self, text: str) -> None:
+        self.script_debug.setText(text or "")
+
+    def set_script_enabled(self, enabled: bool) -> None:
+        self._syncing = True
+        self.script_check.setChecked(enabled)
+        self._syncing = False
 
     def _on_state_changed(self, state: ControllerState) -> None:
         self._syncing = True
