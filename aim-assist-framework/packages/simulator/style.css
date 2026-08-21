@@ -1,0 +1,16 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d14; color: #e6edf3; font-family: system-ui, sans-serif; }
+canvas { display: block; }
+#fov-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+#crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 22px; color: #fff; z-index: 3; pointer-events: none; }
+aside { position: fixed; top: 12px; width: 260px; max-height: calc(100vh - 24px); overflow-y: auto; padding: 12px; background: rgba(8,10,18,.88); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; z-index: 4; font-size: 12px; }
+#config-panel { right: 12px; }
+#debug-panel { left: 12px; width: 320px; font-family: Consolas, monospace; white-space: pre-wrap; line-height: 1.45; }
+label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; color: rgba(255,255,255,.75); }
+input[type="range"], select { width: 100%; }
+h2 { font-size: 14px; margin-bottom: 10px; }
+.status-selected { color: #4ade80; }
+.status-outside { color: #94a3b8; }
+.status-dead { color: #64748b; }
+.status-team { color: #fbbf24; }
+.status-invisible { color: #f87171; }
