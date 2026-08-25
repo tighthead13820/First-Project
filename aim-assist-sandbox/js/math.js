@@ -26,9 +26,10 @@ const _scratchC = new THREE.Vector3();
  */
 export function forwardFromAngles(yaw, pitch, out = new THREE.Vector3()) {
   const cosPitch = Math.cos(pitch);
+  // Must match Three.js PerspectiveCamera rotation.order = "YXZ".
   out.set(
-    cosPitch * Math.sin(yaw),
-    -Math.sin(pitch),
+    -cosPitch * Math.sin(yaw),
+    Math.sin(pitch),
     -cosPitch * Math.cos(yaw)
   );
   return out.normalize();
@@ -37,9 +38,9 @@ export function forwardFromAngles(yaw, pitch, out = new THREE.Vector3()) {
 /**
  * Extract yaw and pitch (radians) from a unit direction vector.
  *
- * Given direction d = (dx, dy, dz):
- *   pitch = asin(-dy)           // vertical angle from horizontal plane
- *   yaw   = atan2(dx, -dz)      // horizontal angle from forward (-Z)
+ * Given direction d = (dx, dy, dz) — matches Three.js YXZ camera Euler:
+ *   pitch = asin(dy)
+ *   yaw   = -atan2(dx, -dz)
  *
  * atan2 handles all quadrants correctly (unlike plain atan).
  */
@@ -48,8 +49,8 @@ export function anglesFromDirection(direction, out = { yaw: 0, pitch: 0 }) {
   const dy = direction.y;
   const dz = direction.z;
 
-  out.pitch = Math.asin(clamp(dy, -1, 1) * -1);
-  out.yaw = Math.atan2(dx, -dz);
+  out.pitch = Math.asin(clamp(dy, -1, 1));
+  out.yaw = -Math.atan2(dx, -dz);
   return out;
 }
 
@@ -169,6 +170,36 @@ export function isWorldPointOnScreen(worldPoint, camera, marginNdc = 0.02) {
   const min = -1 + marginNdc;
   const max = 1 - marginNdc;
   return z > -1 && z < 1 && x >= min && x <= max && y >= min && y <= max;
+}
+
+/**
+ * Project a world point to canvas pixel coordinates (origin top-left).
+ * Uses camera client dimensions — must match crosshair center.
+ */
+export function projectWorldToScreenPixels(
+  worldPoint,
+  camera,
+  screenWidth,
+  screenHeight,
+  out = { x: 0, y: 0, ndcX: 0, ndcY: 0, ndcZ: 0 }
+) {
+  _scratchC.copy(worldPoint).project(camera);
+  out.ndcX = _scratchC.x;
+  out.ndcY = _scratchC.y;
+  out.ndcZ = _scratchC.z;
+  out.x = (out.ndcX * 0.5 + 0.5) * screenWidth;
+  out.y = (-out.ndcY * 0.5 + 0.5) * screenHeight;
+  return out;
+}
+
+/** Legacy broken angles (pre-fix) for diagnostic comparison only. */
+export function anglesFromDirectionLegacy(direction, out = { yaw: 0, pitch: 0 }) {
+  const dx = direction.x;
+  const dy = direction.y;
+  const dz = direction.z;
+  out.pitch = Math.asin(clamp(dy, -1, 1) * -1);
+  out.yaw = Math.atan2(dx, -dz);
+  return out;
 }
 
 function clamp(value, min, max) {

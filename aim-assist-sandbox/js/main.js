@@ -123,11 +123,13 @@ function updateMovement(dt) {
   }
 }
 
+/** Single authoritative camera orientation write (yaw/pitch → Three.js YXZ Euler). */
 function applyCameraTransform() {
   camera.position.copy(player.position);
   camera.rotation.order = "YXZ";
   camera.rotation.y = player.yaw;
   camera.rotation.x = player.pitch;
+  camera.rotation.z = 0;
 }
 
 // ---------------------------------------------------------------------------

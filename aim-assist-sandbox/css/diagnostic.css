@@ -1,0 +1,52 @@
+#diag-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 14px 16px;
+  background: rgba(10, 12, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+#diag-panel h1 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+#pass-banner {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#pass-banner.pending {
+  background: rgba(125, 211, 252, 0.15);
+  color: #7dd3fc;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+}
+
+#pass-banner.pass {
+  background: rgba(68, 255, 136, 0.12);
+  color: #44ff88;
+  border: 1px solid rgba(68, 255, 136, 0.45);
+}
+
+#pass-banner.fail {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+}
+
+#diag-readout {
+  font-size: 11px;
+  font-family: "Consolas", "Monaco", monospace;
+  color: #cbd5e1;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  margin: 0;
+}
