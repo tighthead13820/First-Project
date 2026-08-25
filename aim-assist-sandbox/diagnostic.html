@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aim-Assist Diagnostic Test Mode</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/diagnostic.css" />
+</head>
+<body>
+  <div id="hud">
+    <div id="crosshair">+</div>
+    <div id="diag-panel">
+      <h1>Diagnostic Test Mode</h1>
+      <p class="hint">One stationary target · snap ON · mouse look OFF · prediction OFF</p>
+      <div id="pass-banner" class="pending">Running diagnostics…</div>
+      <pre id="diag-readout">Initializing…</pre>
+    </div>
+  </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.167.1/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module" src="js/diagnosticMode.js"></script>
+</body>
+</html>
