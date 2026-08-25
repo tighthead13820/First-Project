@@ -1,0 +1,14 @@
+{
+  "name": "aim-assist-framework",
+  "private": true,
+  "workspaces": [
+    "packages/core",
+    "packages/simulator",
+    "packages/browser-bridge"
+  ],
+  "scripts": {
+    "build": "npm run build -w @aim-framework/core && npm run build -w @aim-framework/browser-bridge",
+    "test": "npm run test -w @aim-framework/core",
+    "simulator": "npm run dev -w @aim-framework/simulator"
+  }
+}
