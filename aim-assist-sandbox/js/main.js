@@ -264,6 +264,7 @@ function animate() {
 
   // 4. Sync camera to current look (needed for screen-space target detection)
   applyCameraTransform();
+  camera.updateMatrixWorld(true);
   aimAssist.cameraVfov = camera.fov;
 
   // 5. Aim assist reads + writes the SAME player.yaw / player.pitch

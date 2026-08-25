@@ -169,28 +169,36 @@ export class AimAssist {
 
     this.evaluations = evaluations;
 
-    // --- Target lock: same cone for acquire, release, and green overlay ---
+    // --- Target lock ---
     let lockEval = null;
 
-    if (this.lockedTarget) {
-      lockEval = evaluations.find((e) => e.target === this.lockedTarget) ?? null;
-      const stillLocked =
-        lockEval &&
-        lockEval.inRange &&
-        lockEval.inFront !== false &&
-        (this.screenWideSelect
-          ? lockEval.onScreen
-          : lockEval.angle <= releaseHalfRad);
-
-      if (!stillLocked) {
-        this.lockedTarget = null;
-        lockEval = null;
-      }
-    }
-
-    if (!this.lockedTarget && bestTarget) {
+    if (this.screenWideSelect) {
+      // Screen-wide: always track the on-screen target closest to crosshair.
       this.lockedTarget = bestTarget;
-      lockEval = evaluations.find((e) => e.target === bestTarget) ?? null;
+      lockEval = bestTarget
+        ? (evaluations.find((e) => e.target === bestTarget) ?? null)
+        : null;
+    } else {
+      if (this.lockedTarget) {
+        lockEval =
+          evaluations.find((e) => e.target === this.lockedTarget) ?? null;
+        const stillLocked =
+          lockEval &&
+          lockEval.inRange &&
+          lockEval.inFront !== false &&
+          lockEval.angle <= releaseHalfRad;
+
+        if (!stillLocked) {
+          this.lockedTarget = null;
+          lockEval = null;
+        }
+      }
+
+      if (!this.lockedTarget && bestTarget) {
+        this.lockedTarget = bestTarget;
+        lockEval =
+          evaluations.find((e) => e.target === bestTarget) ?? null;
+      }
     }
 
     const trackTarget = this.lockedTarget;
@@ -283,7 +291,7 @@ export class AimAssist {
     const lines = [];
 
     if (trackTarget && t) {
-      lines.push(`Target: ${t.targetId} (LOCKED → ${this.targetBone})`);
+      lines.push(`Target: ${t.targetId} (${this.screenWideSelect ? "TRACKING" : "LOCKED"} → ${this.targetBone})`);
       lines.push(
         this.screenWideSelect
           ? `Mode: screen-wide (camera FOV ${this.cameraVfov.toFixed(0)}°)`

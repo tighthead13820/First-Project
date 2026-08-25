@@ -118,7 +118,9 @@ export class UI {
 
     const cx = w / 2;
     const cy = h / 2;
-    const locked = Boolean(this.aimAssist.selectedTarget);
+    const locked =
+      Boolean(this.aimAssist.selectedTarget) &&
+      Boolean(this.aimAssist.tracking?.tracking);
     const stroke = locked
       ? "rgba(68, 255, 136, 0.85)"
       : "rgba(125, 211, 252, 0.55)";
