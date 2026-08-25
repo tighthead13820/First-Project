@@ -18,6 +18,7 @@ import config
 from aimbridge.host import ScriptHost, ScriptLoadError
 from backend import VirtualControllerBackend, create_backend
 from backend.base import BackendError
+from controller_hardware import RealControllerHardware
 from controls.keyboard import KeyboardController
 from controls.state import ControllerState, merge_held_overrides
 from overlay.aim_viz_hud import AimVisualizationHud
@@ -36,14 +37,18 @@ class OverlayApp:
         backend: Optional[VirtualControllerBackend] = None,
         backend_kind: str = "simulation",
         target_source_kind: str = "mock-screen",
+        controller_hardware: Optional[RealControllerHardware] = None,
     ) -> None:
         self.app = QApplication.instance() or QApplication(sys.argv)
         self.app.setApplicationName("PS Remote Play Control Overlay")
         self.app.setQuitOnLastWindowClosed(True)
 
         self.state = ControllerState()
+        self._controller_hw = controller_hardware
         try:
-            self.backend = backend or create_backend(backend_kind)
+            self.backend = backend or create_backend(
+                backend_kind, hardware=self._controller_hw
+            )
         except BackendError as exc:
             print(f"[backend] {exc}")
             self.backend = create_backend("simulation")
@@ -115,10 +120,52 @@ class OverlayApp:
         elif self.live.enabled:
             self.aim_viz.show()
 
+    def _ensure_controller_hardware(self) -> RealControllerHardware:
+        """Lazy-init the production VDS4 driver (Aim Core LIVE hook)."""
+        if self._controller_hw is None:
+            self._controller_hw = RealControllerHardware()
+        return self._controller_hw
+
     def _on_aim_core_enabled(self, enabled: bool) -> None:
         if enabled and self.panel.script_check.isChecked():
             self.panel.set_script_enabled(False)
             self.scripts.set_enabled(False)
+        if enabled:
+            hw = self._ensure_controller_hardware()
+            if not hw.enabled:
+                self.panel.aim_core_check.setChecked(False)
+                QMessageBox.warning(
+                    self.panel,
+                    "Controller hardware unavailable",
+                    "Could not register Virtual DualShock 4.\n\n"
+                    "Install ViGEmBus and run: pip install vgamepad\n"
+                    "Then restart with: python main.py --backend vigem --live",
+                )
+                return
+            # Re-bind backend so push() routes through RealControllerHardware
+            if self.backend_kind.startswith("vigem"):
+                from backend.controller_hardware_backend import (
+                    ControllerHardwareBackend,
+                )
+
+                if not isinstance(self.backend, ControllerHardwareBackend):
+                    try:
+                        self.backend.disconnect()
+                    except Exception:
+                        pass
+                    self.backend = ControllerHardwareBackend(hardware=hw)
+                    try:
+                        self.backend.connect()
+                        self._hardware_connected = True
+                    except BackendError as exc:
+                        self._hardware_connected = False
+                        QMessageBox.warning(
+                            self.panel, "Backend connect failed", str(exc)
+                        )
+                self.panel.set_backend_name(self.backend.describe())
+            if not self.state.simulation_mode:
+                self.panel.sim_check.setChecked(True)
+                self.state.set_simulation_mode(True)
         self.live.set_enabled(enabled)
         self._sync_aim_core_options()
         sx, sy, sw, sh = self._screen_geometry()
@@ -303,9 +350,11 @@ class OverlayApp:
 def run(
     backend_kind: str = "simulation",
     target_source_kind: str = "mock-screen",
+    controller_hardware: Optional[RealControllerHardware] = None,
 ) -> int:
     """Public entry used by main.py and tests."""
     return OverlayApp(
         backend_kind=backend_kind,
         target_source_kind=target_source_kind,
+        controller_hardware=controller_hardware,
     ).run()

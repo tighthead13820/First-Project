@@ -16,20 +16,24 @@ __all__ = [
     "VirtualControllerBackend",
     "NullBackend",
     "SimulationBackend",
+    "ControllerHardwareBackend",
     "ViGEmBackend",
     "create_backend",
 ]
 
 
-def create_backend(kind: str = "simulation") -> VirtualControllerBackend:
+def create_backend(
+    kind: str = "simulation",
+    hardware: "RealControllerHardware | None" = None,
+) -> VirtualControllerBackend:
     """
     Build a backend by name.
 
     kind:
       - "simulation" (default): logs frames when simulation mode is on
       - "null": never emits output
-      - "vigem" / "vigem-ds4": virtual DualShock 4 via ViGEmBus
-      - "vigem-x360": virtual Xbox 360 via ViGEmBus
+      - "vigem" / "vigem-ds4": virtual DualShock 4 via RealControllerHardware
+      - "vigem-x360": virtual Xbox 360 via ViGEmBackend
     """
     key = (kind or "simulation").strip().lower()
     if key in {"simulation", "sim"}:
@@ -37,9 +41,9 @@ def create_backend(kind: str = "simulation") -> VirtualControllerBackend:
     if key in {"null", "none", "ui"}:
         return NullBackend()
     if key in {"vigem", "vigem-ds4", "ds4", "dualshock"}:
-        from .vigem_backend import ViGEmBackend
+        from .controller_hardware_backend import ControllerHardwareBackend
 
-        return ViGEmBackend(pad_type="ds4")
+        return ControllerHardwareBackend(hardware=hardware)
     if key in {"vigem-x360", "x360", "xbox"}:
         from .vigem_backend import ViGEmBackend
 
@@ -56,4 +60,8 @@ def __getattr__(name: str):
         from .vigem_backend import ViGEmBackend
 
         return ViGEmBackend
+    if name == "ControllerHardwareBackend":
+        from .controller_hardware_backend import ControllerHardwareBackend
+
+        return ControllerHardwareBackend
     raise AttributeError(name)
