@@ -1,101 +1,27 @@
 """
-3D helpers — Python port of vendor/aim-assist-sandbox/js/math.js
+3D helpers — re-exports from aim_core.math3d (fixed YXZ signs).
 
-Coordinate system matches the Three.js sandbox:
-  +X right, +Y up, -Z forward when yaw = pitch = 0.
+Legacy import path kept for scripts/ and aimbridge/ modules.
+Source of truth: aim_core/math3d.py (branch fix-camera-yaw-pitch-7c02).
 """
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from aim_core import math3d as _m
+from aim_core.stick_model import StickControllerModel, StickModelConfig as StickGains
 
-from scripts.api import Vec3
-
-
-def clamp(value: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, value))
-
-
-def forward_from_angles(yaw: float, pitch: float) -> Vec3:
-    cos_pitch = math.cos(pitch)
-    return _normalize(
-        Vec3(
-            cos_pitch * math.sin(yaw),
-            -math.sin(pitch),
-            -cos_pitch * math.cos(yaw),
-        )
-    )
-
-
-def angles_from_direction(direction: Vec3) -> tuple[float, float]:
-    pitch = math.asin(clamp(-direction.y, -1.0, 1.0))
-    yaw = math.atan2(direction.x, -direction.z)
-    return yaw, pitch
-
-
-def angle_between(a: Vec3, b: Vec3) -> float:
-    return math.acos(clamp(_dot(_normalize(a), _normalize(b)), -1.0, 1.0))
-
-
-def angle_delta(from_angle: float, to_angle: float) -> float:
-    delta = to_angle - from_angle
-    while delta > math.pi:
-        delta -= 2.0 * math.pi
-    while delta < -math.pi:
-        delta += 2.0 * math.pi
-    return delta
-
-
-def lerp_angle(current: float, target: float, smoothing: float) -> float:
-    return current + angle_delta(current, target) * smoothing
-
-
-def bone_world_position(
-    base: Vec3, bone: str, head_height: float, chest_height: float
-) -> Vec3:
-    height = head_height if bone == "head" else chest_height
-    return Vec3(base.x, base.y + height, base.z)
-
-
-def predict_position(
-    current: Vec3, velocity: Vec3, camera: Vec3, projectile_speed: float
-) -> Vec3:
-    distance = _distance(current, camera)
-    travel = distance / max(projectile_speed, 0.001)
-    return Vec3(
-        current.x + velocity.x * travel,
-        current.y + velocity.y * travel,
-        current.z + velocity.z * travel,
-    )
-
-
-def _dot(a: Vec3, b: Vec3) -> float:
-    return a.x * b.x + a.y * b.y + a.z * b.z
-
-
-def _length(v: Vec3) -> float:
-    return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
-
-
-def _distance(a: Vec3, b: Vec3) -> float:
-    return _length(Vec3(a.x - b.x, a.y - b.y, a.z - b.z))
-
-
-def _normalize(v: Vec3) -> Vec3:
-    length = _length(v)
-    if length <= 1e-9:
-        return Vec3(0.0, 0.0, -1.0)
-    return Vec3(v.x / length, v.y / length, v.z / length)
-
-
-@dataclass
-class StickGains:
-    """Map yaw/pitch error (radians) onto stick deflection."""
-
-    yaw_gain: float = 1.6
-    pitch_gain: float = 1.6
-    deadzone: float = 0.002  # rad
+# Re-export all math helpers
+clamp = _m.clamp
+forward_from_angles = _m.forward_from_angles
+angles_from_direction = _m.angles_from_direction
+angle_between = _m.angle_between
+angle_delta = _m.angle_delta
+exp_smooth_angle = _m.exp_smooth_angle
+lerp_angle = _m.lerp_angle
+bone_world_position = _m.bone_world_position
+predict_position = _m.predict_position
+normalize = _m.normalize
+project_world_to_screen = _m.project_world_to_screen
 
 
 def angles_to_stick(
@@ -105,21 +31,28 @@ def angles_to_stick(
     desired_pitch: float,
     gains: StickGains | None = None,
 ) -> tuple[float, float]:
-    """
-    Convert shortest-path angle error into right-stick RX/RY.
+    model = StickControllerModel(gains or StickGains())
+    return model.from_angle_errors(
+        _m.angle_delta(current_yaw, desired_yaw),
+        _m.angle_delta(current_pitch, desired_pitch),
+        gains_yaw=model.config.yaw_full_scale_deg / 12.0 * 1.6,
+        gains_pitch=model.config.pitch_full_scale_deg / 8.0 * 1.6,
+    )
 
-    Positive yaw delta (look right) → positive RX.
-    Positive pitch delta (look down in sandbox convention) → positive RY.
-    """
-    g = gains or StickGains()
-    dyaw = angle_delta(current_yaw, desired_yaw)
-    dpitch = angle_delta(current_pitch, desired_pitch)
 
-    if abs(dyaw) < g.deadzone:
-        dyaw = 0.0
-    if abs(dpitch) < g.deadzone:
-        dpitch = 0.0
-
-    rx = clamp(dyaw * g.yaw_gain, -1.0, 1.0)
-    ry = clamp(dpitch * g.pitch_gain, -1.0, 1.0)
-    return rx, ry
+__all__ = [
+    "StickGains",
+    "StickControllerModel",
+    "clamp",
+    "forward_from_angles",
+    "angles_from_direction",
+    "angle_between",
+    "angle_delta",
+    "exp_smooth_angle",
+    "lerp_angle",
+    "bone_world_position",
+    "predict_position",
+    "angles_to_stick",
+    "normalize",
+    "project_world_to_screen",
+]

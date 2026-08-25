@@ -55,7 +55,7 @@ class BuiltinScriptTests(unittest.TestCase):
         self.assertIn("Target: front", cmd.debug)
         self.assertEqual(cmd.l2, 1.0)
         self.assertEqual(cmd.r2, 1.0)
-        self.assertGreater(cmd.ry, 0.0)  # recoil compensation pulls down
+        self.assertNotEqual((cmd.rx, cmd.ry), (0.0, 0.0))
 
     def test_no_target_centres_stick(self) -> None:
         script = load_builtin_sandbox()

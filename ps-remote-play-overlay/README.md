@@ -1,81 +1,128 @@
 # PS Remote Play Control Overlay
 
-Windows Python desktop overlay for **testing** PlayStation Remote Play control axes (right stick + L2/R2). Transparent always-on-top HUD, small movable panel, optional hold-to-set keyboard shortcuts, and a pluggable virtual-controller backend.
+Windows Python desktop overlay for **testing** PlayStation Remote Play control axes, with an integrated **aim_core** pipeline ported from the working `aim-assist-sandbox` (branch `cursor/fix-camera-yaw-pitch-7c02`).
 
-This project does **not** inject into games or Remote Play. It is a local tester with a clean seam where a legitimate virtual-controller driver (e.g. ViGEm + `vgamepad`) can be connected later.
+Includes transparent HUD, movable panel, live aim-core automation (mock targets), ViGEm virtual-controller output, and the legacy script upload path.
+
+---
+
+## Important scope note
+
+This overlay **does not** ship automated PS Remote Play screen capture or in-game object detection. The live pipeline uses **mock target sources** for end-to-end validation. The `TargetSource` interface is the extension point if you build your own adapter.
+
+ViGEm sends whatever stick/trigger values the overlay computes — it does not read the game video.
+
+---
+
+## Live production pipeline
+
+```
+TargetSource (mock-screen / mock-world)
+    ↓
+aim_core (selection, head tracking, yaw/pitch error)
+    ↓
+StickControllerModel (pixel/angle → stick X/Y)
+    ↓
+ControllerState
+    ↓
+vgamepad / ViGEmBackend (when --backend vigem)
+    ↓
+Virtual DualShock 4 (Windows)
+```
+
+Enable in the panel: **Aim Core (LIVE)** → **Enable live aim core pipeline** + **Simulation mode**.
 
 ---
 
 ## Features
 
-- Transparent, always-on-top HUD showing live **RX / RY / L2 / R2**
-- Small movable control panel
-- Right-stick **X** and **Y** sliders (`-1.0` … `+1.0`) plus **Reset to centre**
-- **L2** and **R2** analog sliders (`0.0` … `1.0`)
-- Optional keyboard shortcuts that set values **only while keys are held**
-- **Simulation mode** toggle — when on, axes are pushed through the active backend
-- **Aim script loader** — upload a `.py` plugin, load the bundled sandbox port, or import an `aim-assist-sandbox` folder
-- Modular layout so a real virtual-pad backend can replace the simulator
-- Vendored copy of the first-person aim-assist sandbox under `vendor/aim-assist-sandbox/`
+- Transparent axis HUD + full-screen **aim visualization** (crosshair, FOV, target marker, trail)
+- **Production dashboard** with pixel error, yaw/pitch error, stick output, hardware bus status
+- **aim_core** — pure Python, no GUI; fixed Three.js YXZ yaw/pitch signs
+- Screen-space closest-to-centre selection, head tracking, snap/smooth modes, prediction
+- **ViGEm** backend (`vigem`, `vigem-ds4`, `vigem-x360`)
+- Legacy: sliders, keyboard shortcuts, script upload, mock 3D script host
 
 ---
 
 ## Requirements
 
-- Windows 10/11 (designed for desktop overlay use)
+- Windows 10/11
 - Python **3.10+**
-- Dependencies in `requirements.txt` (primarily **PySide6**)
-
-> The UI can start on other OSes for development, but always-on-top / translucent behaviour is validated for Windows.
+- PySide6
+- For real pad output: [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases) + `vgamepad`
 
 ---
 
-## Installation
+## Installation (Windows)
 
 ```bat
 cd ps-remote-play-overlay
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+python -m unittest discover -s tests -v
 ```
 
 ---
 
 ## Run
 
-```bat
-python main.py
-```
-
-Backend options:
+### Mock live pipeline (development)
 
 ```bat
-python main.py --backend simulation
-python main.py --backend null
+python main.py --live
 ```
 
-| Backend       | Behaviour |
-|---------------|-----------|
-| `simulation`  | Default. When **Simulation mode** is checked, each tick logs frames that would be sent to a virtual pad. |
-| `null`        | UI only. Never emits output. |
-| `vigem` / `vigem-ds4` | **Real** virtual DualShock 4 via ViGEmBus + `vgamepad` (Windows). |
-| `vigem-x360`  | **Real** virtual Xbox 360 pad via ViGEmBus. |
+### Real virtual DualShock 4
+
+```bat
+python main.py --backend vigem --live
+```
+
+1. Install ViGEmBus  
+2. Enable **Simulation mode** in the panel (arms hardware output)  
+3. Enable **Aim Core (LIVE)**  
+4. Confirm a virtual DS4 in Windows Game Controllers  
+
+### CLI options
+
+| Flag | Description |
+|------|-------------|
+| `--backend simulation` | Log frames only (default) |
+| `--backend vigem` | Virtual DualShock 4 |
+| `--backend vigem-x360` | Virtual Xbox 360 |
+| `--live` | Enable aim core on startup |
+| `--source mock-screen` | Animated 2D screen targets (default) |
+| `--source mock-world` | 3D world targets projected to screen |
+
+Preflight: `--backend vigem` runs all unit tests before starting the hardware loop.
 
 ---
 
-## Keyboard shortcuts (hold to set)
+## Reused from aim-assist-sandbox
 
-Configured in `config.py` → `SHORTCUTS`:
+| Sandbox file | Python module | What was ported |
+|--------------|---------------|-----------------|
+| `js/math.js` | `aim_core/math3d.py` | `forwardFromAngles`, `anglesFromDirection`, `angleBetween`, `angleDelta`, `expSmoothAngle`, `getBoneWorldPosition`, `predictPosition`, FOV radius |
+| `js/aimAssist.js` | `aim_core/engine.py` | Target selection, sticky lock, screen-wide select, snap/smooth, live aim point refresh |
+| `js/aimAssist.js` | `aim_core/screen_engine.py` | Closest-to-centre screen selection, pixel→angle error |
+| — | `aim_core/stick_model.py` | Yaw/pitch/pixel error → stick X/Y |
 
-| Key    | Effect                          |
-|--------|---------------------------------|
-| ← / →  | Right stick X = -1.0 / +1.0     |
-| ↑ / ↓  | Right stick Y = -1.0 / +1.0     |
-| Q      | L2 = 1.0                        |
-| E      | R2 = 1.0                        |
-| C      | Right stick → centre (0, 0)     |
+**Preserved yaw/pitch fix** (`cursor/fix-camera-yaw-pitch-7c02`):
 
-Releasing a key restores the **slider baseline**. Edit `config.py` to change bindings.
+```python
+# forward (YXZ)
+forward.x = -cos(pitch) * sin(yaw)
+forward.y =  sin(pitch)
+forward.z = -cos(pitch) * cos(yaw)
+
+# angles from direction
+pitch = asin(dy)
+yaw   = -atan2(dx, -dz)
+```
+
+Legacy broken signs remain as `angles_from_direction_legacy()` for tests only.
 
 ---
 
@@ -83,169 +130,77 @@ Releasing a key restores the **slider baseline**. Edit `config.py` to change bin
 
 ```
 ps-remote-play-overlay/
-├── main.py                 # CLI entry point
-├── config.py               # Ranges, tick rate, shortcut map
-├── requirements.txt
-├── README.md
-├── controls/
-│   ├── state.py            # ControllerState (single source of truth)
-│   └── keyboard.py         # Hold-to-set shortcut filter
-├── backend/
-│   ├── base.py             # VirtualControllerBackend ABC
-│   ├── null_backend.py     # No-op backend
-│   ├── simulation_backend.py
-│   ├── vigem_backend.py    # Real DS4 / X360 via ViGEmBus + vgamepad
-│   └── __init__.py         # create_backend() factory
+├── aim_core/               # Pure Python aim maths (no GUI)
+│   ├── math3d.py           # Fixed YXZ port of math.js
+│   ├── engine.py           # 3D world aim engine
+│   ├── screen_engine.py    # 2D screen-space aim
+│   └── stick_model.py      # Error → hardware stick
+├── sources/                # TargetSource implementations
+│   ├── base.py             # TargetSource ABC
+│   ├── mock_screen_source.py
+│   └── world_mock_source.py
+├── pipeline/
+│   └── live_engine.py      # Live loop → ControllerState → ViGEm
 ├── overlay/
-│   ├── app.py              # Wires UI + backend + scripts + tick loop
-│   ├── panel.py            # Movable control panel (+ script buttons)
-│   └── hud.py              # Transparent always-on-top readout
-├── scripts/
-│   ├── api.py              # AimScript plugin contract
-│   ├── loader.py           # Upload / import / builtin loaders
-│   ├── builtin_sandbox_aim.py  # Python port of aimAssist.js
-│   ├── example_circle.py   # Sample uploadable script
-│   └── uploaded/           # Copies of user-uploaded scripts
-├── aimbridge/
-│   ├── math3d.py           # Port of sandbox js/math.js
-│   ├── mock_scene.py       # Synthetic targets for script testing
-│   └── host.py             # Runs loaded script → drives stick
-├── vendor/
-│   └── aim-assist-sandbox/ # Original JS Three.js sandbox (reference)
+│   ├── app.py              # Main shell
+│   ├── panel.py            # Control + production dashboard
+│   ├── hud.py              # Axis readout
+│   └── aim_viz_hud.py      # Crosshair / target / FOV overlay
+├── backend/                # simulation / null / vigem
+├── controls/               # state + keyboard
+├── scripts/                # Legacy uploadable scripts
 └── tests/
+    ├── test_aim_core.py    # Verification suite (run before ViGEm)
     ├── test_state.py
     └── test_scripts.py
 ```
 
-### How each module works
+---
 
-1. **`controls/state.py`** — Holds `rx`, `ry`, `l2`, `r2`, and `simulation_mode`. Sliders and shortcuts write here (or layer overrides on top). Listeners refresh the UI.
-2. **`controls/keyboard.py`** — Application event filter. While a bound key is held, its axis dict is merged over the slider baseline each tick.
-3. **`overlay/panel.py`** — Always-on-top tool window with sliders, reset button, simulation checkbox, script upload/load controls, and live readouts.
-4. **`overlay/hud.py`** — Frameless translucent window that mirrors the effective axes.
-5. **`overlay/app.py`** — Creates Qt app, panel, HUD, keyboard filter, script host, timer (~30 Hz), and calls `backend.push(...)`.
-6. **`backend/base.py`** — Abstract `connect` / `disconnect` / `push` API.
-7. **`backend/simulation_backend.py`** — Records and prints frames when simulation mode is on. Contains a commented sketch for a future ViGEm/`vgamepad` backend.
-8. **`backend/null_backend.py`** — Silent stub for UI dry-runs.
-9. **`scripts/`** — Plugin API + loader. Uploaded `.py` files must expose `create_script()` or a `Script` class.
-10. **`aimbridge/`** — Math port, mock target scene, and `ScriptHost` that feeds frames into the loaded script.
-11. **`config.py`** — Tunables only; no logic.
+## Aim state flow (when Aim Core LIVE is on)
+
+1. `TargetSource.tick(dt)` advances mock targets  
+2. `ScreenAimEngine.update()` selects closest visible head to screen centre  
+3. Pixel error → yaw/pitch error → `StickControllerModel` → `stick_x/stick_y`  
+4. Optional L2/R2 + recoil bias applied  
+5. `ControllerState` updated → merged with keyboard overrides  
+6. `ViGEmBackend.push()` when simulation mode is on  
+7. Dashboard + aim viz HUD refreshed  
 
 ---
 
-## Loading the aim-assist sandbox into the overlay
-
-The original sandbox is JavaScript/Three.js (`vendor/aim-assist-sandbox/`). The overlay runs a **Python port** of the same pipeline so it can drive stick axes inside PySide.
-
-### In the control panel
-
-| Button | What it does |
-|--------|----------------|
-| **Load sandbox** | Loads `scripts/builtin_sandbox_aim.py` (port of `js/aimAssist.js`) |
-| **Upload .py…** | Copies a Python aim script into `scripts/uploaded/` and loads it |
-| **Import folder…** | Copies an `aim-assist-sandbox` tree into `vendor/` (must contain `js/aimAssist.js`) and activates the Python port |
-| **Drive stick from loaded script** | Enables the host: mock targets → script → RX/RY each tick |
-| **On lock: press L2** | While locked, sets L2 = 1.0 |
-| **On lock: press R2** | While locked, sets R2 = 1.0 (auto-fire for testing) |
-| **On lock: compensate recoil** | Adds a downward + sway stick bias while firing (tunable V/H) |
-
-### Quick try
-
-1. `python main.py`
-2. Click **Load sandbox**
-3. Check **Drive stick from loaded script**
-4. Optionally check **Simulation mode** to log outbound frames
-5. Watch RX/RY and the script debug panel track the mock dummies
-
-Upload the included sample instead:
-
-1. **Upload .py…** → choose `scripts/example_circle.py`
-2. Enable **Drive stick from loaded script**
-3. Stick oscillates in a circle (verifies upload wiring)
-
-### Writing your own script
+## TargetSource interface
 
 ```python
-from scripts.api import AimFrame, StickCommand
-
-class Script:
-    name = "my-script"
-
-    def reset(self) -> None:
-        pass
-
-    def update(self, frame: AimFrame) -> StickCommand:
-        # frame.camera / frame.targets are sandbox-style samples
-        return StickCommand(rx=0.0, ry=0.0, debug="idle")
-
-def create_script():
-    return Script()
+class TargetSource:
+    def get_screen_targets(self) -> list[ScreenTarget]: ...
+    def get_world_targets(self) -> list[WorldTarget]: ...
+    def get_camera_state(self) -> CameraState: ...
+    def tick(self, dt: float) -> None: ...
 ```
 
-Scripts receive normalized camera/target frames from `aimbridge` (or a future adapter). They must not read game memory — feed data in through the frame API.
-
----
-
-## Real virtual controller (ViGEm)
-
-On Windows you can emit a real DualShock 4 that PS Remote Play can see:
-
-1. Install **ViGEmBus**: https://github.com/nefarius/ViGEmBus/releases  
-2. `pip install -r requirements.txt` (pulls in `vgamepad` on Windows)  
-3. Run:
-
-```bat
-python main.py --backend vigem
-```
-
-4. Check **Simulation mode (send controller output)** in the panel — that gate must be on for axes to be pushed.  
-5. In PS Remote Play / Windows Game Controllers, confirm a virtual DS4 appears.
-
-Use `--backend vigem-x360` for an Xbox 360 virtual pad instead.
-
-> Still true: the aim script only locks **mock** targets inside the overlay. ViGEm sends whatever RX/RY/L2/R2 the overlay currently holds (sliders, shortcuts, or script). It does not detect enemies inside the Remote Play video.
-
----
-
-## Simulation mode
-
-1. Open the control panel.
-2. Check **Simulation mode (send controller output)**.
-3. Move sliders, hold shortcuts, or enable a loaded aim script.
-4. With the default `simulation` backend, the console prints throttled lines such as:
-
-   ```text
-   [simulation] RX=+0.50 RY=-0.20 L2=0.00 R2=1.00
-   ```
-
-When simulation mode is **off**, backends that respect the flag (including `SimulationBackend`) do not emit frames.
-
----
-
-## Plugging in a real virtual controller later
-
-1. Subclass `VirtualControllerBackend` in a new module (e.g. `backend/vigem_backend.py`).
-2. In `connect()`, open your virtual pad.
-3. In `push(state)`, map `state.rx/ry/l2/r2` onto the driver and call update — **only when** `state.simulation_mode` is true (or rename that flag to “output enabled” if you prefer).
-4. Register the class in `backend.create_backend()`.
-5. Run with `python main.py --backend <your-name>`.
-
-A commented example using `vgamepad` lives at the top of `backend/simulation_backend.py`. You will also need the matching Windows driver (commonly ViGEmBus) installed separately.
+Each `ScreenTarget` includes: `id`, `screen_x/y`, `head_x/y`, `chest_x/y`, velocities, `alive`, `visible`, `team`.
 
 ---
 
 ## Tests
 
 ```bat
-python -m unittest tests.test_state tests.test_scripts -v
+python -m unittest discover -s tests -v
 ```
 
-These cover clamping, reset, listeners, override merging, simulation gating, script upload, and the sandbox aim port — no display required.
+`test_aim_core.py` covers: centre target → zero stick, left/right/up/down, moving targets, disappearing targets, multi-target selection, clamping, smoothing convergence, yaw/pitch sign orientation, prediction on/off, fixed vs legacy signs.
+
+---
+
+## Keyboard shortcuts
+
+See `config.py` → `SHORTCUTS` (arrows, Q/E L2/R2, C = centre).
 
 ---
 
 ## Notes
 
-- Y axis follows common gamepad convention: **up = negative**, **down = positive**.
-- The HUD and panel use `WindowStaysOnTopHint` so they remain visible over Remote Play.
-- This repository is for **control testing and tooling**. Respect game and platform terms of service when connecting any virtual device.
+- Y axis: **up = negative**, **down = positive** (gamepad convention; ViGEm backend flips Y for the driver).
+- Aim Core LIVE and **Drive stick from script** are mutually exclusive (enabling one disables the other).
+- Respect game and platform terms of service when using virtual controllers.

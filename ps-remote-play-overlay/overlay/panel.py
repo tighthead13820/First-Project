@@ -118,6 +118,8 @@ class ControlPanel(QWidget):
     request_import_sandbox = Signal()
     script_enabled_changed = Signal(bool)
     fire_options_changed = Signal()
+    aim_core_enabled_changed = Signal(bool)
+    aim_core_options_changed = Signal()
 
     def __init__(self, state: ControllerState) -> None:
         super().__init__()
@@ -182,6 +184,52 @@ class ControlPanel(QWidget):
         sim_layout.addRow(self.sim_check)
         sim_layout.addRow(self.backend_label)
         root.addWidget(sim_box)
+
+        core_box = QGroupBox("Aim Core (LIVE)")
+        core_layout = QVBoxLayout(core_box)
+        self.aim_core_check = QCheckBox("Enable live aim core pipeline")
+        self.aim_core_check.setToolTip(
+            "Runs aim_core → stick model → controller state → ViGEm. "
+            "Uses mock screen targets by default (not game capture)."
+        )
+        core_layout.addWidget(self.aim_core_check)
+
+        self.aim_viz_check = QCheckBox("Show aim visualization overlay")
+        self.aim_viz_check.setChecked(True)
+        core_layout.addWidget(self.aim_viz_check)
+
+        self.snap_check = QCheckBox("Snap mode")
+        self.snap_check.setChecked(False)
+        core_layout.addWidget(self.snap_check)
+
+        self.prediction_check = QCheckBox("Prediction")
+        self.prediction_check.setChecked(True)
+        core_layout.addWidget(self.prediction_check)
+
+        rsp_row = QHBoxLayout()
+        rsp_row.addWidget(QLabel("Response"))
+        self.response_spin = QDoubleSpinBox()
+        self.response_spin.setRange(1.0, 120.0)
+        self.response_spin.setValue(35.0)
+        self.response_spin.setFixedWidth(72)
+        rsp_row.addWidget(self.response_spin)
+        rsp_row.addStretch(1)
+        core_layout.addLayout(rsp_row)
+
+        self.hardware_status = QLabel("VGAMEPAD HARDWARE BUS: —")
+        self.hardware_status.setObjectName("hardware_armed")
+        self.hardware_status.setWordWrap(True)
+        core_layout.addWidget(self.hardware_status)
+
+        self.aim_dashboard = QLabel("")
+        self.aim_dashboard.setObjectName("live")
+        self.aim_dashboard.setWordWrap(True)
+        self.aim_dashboard.setMinimumHeight(160)
+        self.aim_dashboard.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        core_layout.addWidget(self.aim_dashboard)
+        root.addWidget(core_box)
 
         script_box = QGroupBox("Aim script")
         script_layout = QVBoxLayout(script_box)
@@ -273,6 +321,11 @@ class ControlPanel(QWidget):
         self.l2_row.value_changed.connect(self._on_l2)
         self.r2_row.value_changed.connect(self._on_r2)
         self.sim_check.toggled.connect(self._on_sim_toggled)
+        self.aim_core_check.toggled.connect(self._on_aim_core_toggled)
+        self.aim_viz_check.toggled.connect(self._on_aim_core_options)
+        self.snap_check.toggled.connect(self._on_aim_core_options)
+        self.prediction_check.toggled.connect(self._on_aim_core_options)
+        self.response_spin.valueChanged.connect(self._on_aim_core_options)
         self.script_check.toggled.connect(self._on_script_toggled)
         self.auto_l2_check.toggled.connect(self._on_fire_options)
         self.auto_r2_check.toggled.connect(self._on_fire_options)
@@ -340,6 +393,15 @@ class ControlPanel(QWidget):
                 border-radius: 7px;
             }
             QCheckBox { spacing: 8px; }
+            QLabel#hardware_armed {
+                color: #7CFFB2;
+                font-weight: 700;
+                font-size: 12px;
+                padding: 6px;
+                background: #0A2018;
+                border: 1px solid #2A8050;
+                border-radius: 4px;
+            }
             """
         )
 
@@ -370,6 +432,37 @@ class ControlPanel(QWidget):
         if self._syncing:
             return
         self._state.set_simulation_mode(checked)
+
+    def _on_aim_core_toggled(self, checked: bool) -> None:
+        if self._syncing:
+            return
+        self.aim_core_enabled_changed.emit(checked)
+
+    def _on_aim_core_options(self, *_args) -> None:
+        if self._syncing:
+            return
+        self.aim_core_options_changed.emit()
+
+    def aim_core_option_values(self) -> dict[str, bool | float]:
+        return {
+            "snap_mode": self.snap_check.isChecked(),
+            "prediction": self.prediction_check.isChecked(),
+            "response_speed": float(self.response_spin.value()),
+            "show_viz": self.aim_viz_check.isChecked(),
+        }
+
+    def set_aim_dashboard(self, text: str) -> None:
+        self.aim_dashboard.setText(text)
+
+    def set_hardware_status(self, text: str, armed: bool) -> None:
+        self.hardware_status.setText(text)
+        color = "#7CFFB2" if armed else "#FF9E9E"
+        border = "#2A8050" if armed else "#804040"
+        bg = "#0A2018" if armed else "#201010"
+        self.hardware_status.setStyleSheet(
+            f"color: {color}; font-weight: 700; font-size: 12px; padding: 6px; "
+            f"background: {bg}; border: 1px solid {border}; border-radius: 4px;"
+        )
 
     def _on_script_toggled(self, checked: bool) -> None:
         if self._syncing:

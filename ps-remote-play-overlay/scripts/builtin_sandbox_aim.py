@@ -18,18 +18,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from aimbridge.math3d import (
-    StickGains,
-    angle_between,
-    angles_from_direction,
-    angles_to_stick,
-    bone_world_position,
-    clamp,
-    forward_from_angles,
-    lerp_angle,
-    predict_position,
-)
+from aim_core import math3d as m
+from aimbridge.math3d import StickGains, angles_to_stick, clamp
 from scripts.api import AimFrame, StickCommand, Vec3
+
+
+def _bone_pos(target, bone: str) -> Vec3:
+    h = target.head_height if bone == "head" else target.chest_height
+    return Vec3(target.position.x, target.position.y + h, target.position.z)
 
 
 @dataclass
@@ -93,7 +89,7 @@ class Script:
                 rx=0.0, ry=0.0, l2=0.0, r2=0.0, debug=self.debug_info
             )
 
-        forward = forward_from_angles(self._yaw, self._pitch)
+        forward = m.forward_from_angles(self._yaw, self._pitch)
         fov_half = math.radians(self.settings.fov_deg) / 2.0
 
         best_id: str | None = None
@@ -101,14 +97,9 @@ class Script:
         best_aim = Vec3()
 
         for target in frame.targets:
-            aim = bone_world_position(
-                target.position,
-                self.settings.target_bone,
-                target.head_height,
-                target.chest_height,
-            )
+            aim = _bone_pos(target, self.settings.target_bone)
             if self.settings.prediction_enabled:
-                aim = predict_position(
+                aim = m.predict_position(
                     aim,
                     target.velocity,
                     cam.position,
@@ -126,7 +117,7 @@ class Script:
             if distance > self.settings.max_range or distance < 1e-6:
                 continue
 
-            angle = angle_between(forward, to_target)
+            angle = m.angle_between(forward, to_target)
             if angle <= fov_half and angle < best_angle:
                 best_angle = angle
                 best_id = target.id
@@ -147,10 +138,10 @@ class Script:
             best_aim.y - cam.position.y,
             best_aim.z - cam.position.z,
         )
-        desired_yaw, desired_pitch = angles_from_direction(to_best)
+        desired_yaw, desired_pitch = m.angles_from_direction(to_best)
 
-        new_yaw = lerp_angle(self._yaw, desired_yaw, self.settings.smoothing)
-        new_pitch = lerp_angle(
+        new_yaw = m.lerp_angle(self._yaw, desired_yaw, self.settings.smoothing)
+        new_pitch = m.lerp_angle(
             self._pitch, desired_pitch, self.settings.smoothing
         )
 
