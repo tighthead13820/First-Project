@@ -95,6 +95,7 @@ python main.py --backend vigem --live
 | `--live` | Enable aim core on startup |
 | `--source mock-screen` | Animated 2D screen targets (default) |
 | `--source mock-world` | 3D world targets projected to screen |
+| `--source network` | UDP JSON telemetry on `--network-port` (default 5555) |
 
 Preflight: `--backend vigem` runs all unit tests before starting the hardware loop.
 
@@ -154,6 +155,31 @@ ps-remote-play-overlay/
     ├── test_state.py
     └── test_scripts.py
 ```
+
+---
+
+## Network telemetry TargetSource
+
+External apps can push target coordinates over UDP (no screen capture).
+
+```bat
+python main.py --backend vigem --live --source network
+python tools/send_network_targets.py
+```
+
+Default bind: `127.0.0.1:5555`. Packet example:
+
+```json
+{
+  "screen_width": 1920,
+  "screen_height": 1080,
+  "targets": [
+    {"id": "bot_1", "head_x": 1100, "head_y": 480}
+  ]
+}
+```
+
+Flow: UDP JSON → `ExternalNetworkTargetSource` → closest-to-centre → stick model → `RealControllerHardware` (when Simulation + Aim Core LIVE are on).
 
 ---
 

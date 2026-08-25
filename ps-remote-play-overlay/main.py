@@ -2,21 +2,16 @@
 """
 PS Remote Play control-testing overlay with integrated aim_core pipeline.
 
-Usage (Windows / PS5 Remote Play):
+Usage (Windows):
     python -m venv .venv
     .venv\\Scripts\\activate
     pip install -r requirements.txt
     python -m unittest discover -s tests -v
     python main.py --backend vigem --live
 
-Backend selection:
-    python main.py --backend simulation
-    python main.py --backend vigem          # Virtual DualShock 4 (PS Remote Play)
-    python main.py --backend vigem-x360
-
-Live aim core:
-    python main.py --live                   # mock screen targets (default)
-    python main.py --live --source mock-world
+Network telemetry TargetSource (external apps push JSON over UDP):
+    python main.py --backend vigem --live --source network
+    python tools/send_network_targets.py
 """
 
 from __future__ import annotations
@@ -39,7 +34,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--backend",
         default="simulation",
         choices=["simulation", "null", "vigem", "vigem-ds4", "vigem-x360"],
-        help="Virtual-controller backend (default: simulation). Use vigem for PS Remote Play.",
+        help="Virtual-controller backend (default: simulation). Use vigem for DS4 output.",
     )
     parser.add_argument(
         "--live",
@@ -49,8 +44,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--source",
         default="mock-screen",
-        choices=["mock-screen", "mock-world"],
-        help="TargetSource for live pipeline (default: mock-screen).",
+        choices=["mock-screen", "mock-world", "network"],
+        help=(
+            "TargetSource for live pipeline. "
+            "'network' listens for UDP JSON on --network-port (default 5555)."
+        ),
+    )
+    parser.add_argument(
+        "--network-host",
+        default="127.0.0.1",
+        help="UDP bind host for --source network (default 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--network-port",
+        type=int,
+        default=5555,
+        help="UDP bind port for --source network (default 5555).",
     )
     return parser.parse_args(argv)
 
@@ -98,10 +107,18 @@ def main(argv: list[str] | None = None) -> int:
 
     from overlay.app import OverlayApp
 
+    if args.source == "network":
+        print(
+            f"[main] ExternalNetworkTargetSource active — "
+            f"UDP {args.network_host}:{args.network_port}"
+        )
+
     app = OverlayApp(
         backend_kind=args.backend,
         target_source_kind=args.source,
         controller_hardware=live_hw,
+        network_host=args.network_host,
+        network_port=args.network_port,
     )
     if args.live:
         app.panel.aim_core_check.setChecked(True)

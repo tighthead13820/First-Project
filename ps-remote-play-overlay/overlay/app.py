@@ -25,8 +25,8 @@ from overlay.aim_viz_hud import AimVisualizationHud
 from overlay.hud import HudWindow
 from overlay.panel import ControlPanel
 from pipeline.live_engine import LiveAimPipeline
-from sources.mock_screen_source import MockScreenTargetSource
-from sources.world_mock_source import WorldMockTargetSource
+from sources import create_target_source
+from sources.network_source import ExternalNetworkTargetSource
 
 
 class OverlayApp:
@@ -38,6 +38,8 @@ class OverlayApp:
         backend_kind: str = "simulation",
         target_source_kind: str = "mock-screen",
         controller_hardware: Optional[RealControllerHardware] = None,
+        network_host: str = "127.0.0.1",
+        network_port: int = 5555,
     ) -> None:
         self.app = QApplication.instance() or QApplication(sys.argv)
         self.app.setApplicationName("PS Remote Play Control Overlay")
@@ -53,14 +55,16 @@ class OverlayApp:
             print(f"[backend] {exc}")
             self.backend = create_backend("simulation")
         self.backend_kind = backend_kind
+        self.target_source_kind = target_source_kind
 
-        source = (
-            WorldMockTargetSource()
-            if target_source_kind == "mock-world"
-            else MockScreenTargetSource()
+        source = create_target_source(
+            target_source_kind,
+            host=network_host,
+            port=network_port,
         )
         self.live = LiveAimPipeline(state=self.state, target_source=source)
-        self.live.mode = "screen" if target_source_kind == "mock-screen" else "world"
+        # World mock uses 3D engine; network + mock-screen use screen engine.
+        self.live.mode = "world" if target_source_kind == "mock-world" else "screen"
 
         self.scripts = ScriptHost(self.state)
 
@@ -344,6 +348,10 @@ class OverlayApp:
             self._tick.stop()
             self.backend.disconnect()
             self._hardware_connected = False
+            # Stop UDP listener if active
+            src = self.live.target_source
+            if isinstance(src, ExternalNetworkTargetSource):
+                src.stop()
         return int(code)
 
 
@@ -351,10 +359,14 @@ def run(
     backend_kind: str = "simulation",
     target_source_kind: str = "mock-screen",
     controller_hardware: Optional[RealControllerHardware] = None,
+    network_host: str = "127.0.0.1",
+    network_port: int = 5555,
 ) -> int:
     """Public entry used by main.py and tests."""
     return OverlayApp(
         backend_kind=backend_kind,
         target_source_kind=target_source_kind,
         controller_hardware=controller_hardware,
+        network_host=network_host,
+        network_port=network_port,
     ).run()
