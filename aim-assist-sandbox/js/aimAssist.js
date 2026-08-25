@@ -40,7 +40,7 @@ export class AimAssist {
      * Exponential response speed (1/s). Typical useful range: 1–40.
      *   1–3 slow · 5–10 gentle · 12–20 responsive · 25–40 very fast
      */
-    this.responseSpeed = 14;
+    this.responseSpeed = 22;
     this.targetBone = "chest";
     this.maxRange = 50;
     this.predictionEnabled = false;
@@ -48,6 +48,11 @@ export class AimAssist {
 
     /** Bypass smoothing — apply exact desired yaw/pitch every frame. */
     this.snapAimDebug = false;
+
+    /** Sticky lock — keeps tracking after narrow-FOV acquire until release cone. */
+    this.lockedTarget = null;
+    /** Release lock when angle exceeds acquireHalf × this multiplier (default 3×). */
+    this.releaseFovMultiplier = 3;
 
     this.debugForceFirstTarget = false;
     this.debugIgnoreRange = false;
@@ -70,6 +75,7 @@ export class AimAssist {
 
     if (!this.enabled) {
       this.selectedTarget = null;
+      this.lockedTarget = null;
       this.evaluations = [];
       this.tracking = null;
       this.debugInfo = "Aim assist disabled";
@@ -138,7 +144,35 @@ export class AimAssist {
     }
 
     this.evaluations = evaluations;
-    this.selectedTarget = bestTarget;
+
+    // --- Target lock: narrow cone to ACQUIRE, wider cone to RELEASE ---
+    // Without this, slow tracking loses selection the frame the crosshair
+    // lags behind a mover → green flash but no follow.
+    const releaseHalfRad = fovHalfRad * this.releaseFovMultiplier;
+    let lockEval = null;
+
+    if (this.lockedTarget) {
+      lockEval = evaluations.find((e) => e.target === this.lockedTarget) ?? null;
+      const stillLocked =
+        lockEval &&
+        lockEval.inRange &&
+        lockEval.angle <= releaseHalfRad;
+
+      if (!stillLocked) {
+        this.lockedTarget = null;
+        lockEval = null;
+      }
+    }
+
+    // Acquire a new lock when nothing locked and a target is inside narrow FOV.
+    if (!this.lockedTarget && bestTarget) {
+      this.lockedTarget = bestTarget;
+      lockEval = evaluations.find((e) => e.target === bestTarget) ?? null;
+    }
+
+    const trackTarget = this.lockedTarget;
+    this.selectedTarget = trackTarget;
+
     this.lastCameraDebug = {
       position: position.clone(),
       forward: _forward.clone(),
@@ -146,20 +180,21 @@ export class AimAssist {
       pitch,
       fovDeg: this.fovDeg,
       fovHalfDeg: (fovHalfRad * 180) / Math.PI,
+      releaseHalfDeg: (releaseHalfRad * 180) / Math.PI,
     };
 
-    if (!bestTarget) {
+    if (!trackTarget) {
       this.tracking = null;
-      this.debugInfo = this.buildDebugInfo(nearest, null);
+      this.debugInfo = this.buildDebugInfo(nearest, null, lockEval);
       return { yaw, pitch };
     }
 
-    // --- Actuation: ALWAYS re-read the live aim point (never freeze coords) ---
-    getBoneWorldPosition(bestTarget, this.targetBone, _aimPoint);
+    // --- Actuation: live aim point on LOCKED target every frame ---
+    getBoneWorldPosition(trackTarget, this.targetBone, _aimPoint);
     if (this.predictionEnabled) {
       predictPosition(
         _aimPoint,
-        bestTarget.velocity,
+        trackTarget.velocity,
         position,
         this.projectileSpeed,
         _aimPoint
@@ -193,7 +228,7 @@ export class AimAssist {
     const preError = angleBetween(_forward, _toTarget);
 
     this.tracking = {
-      targetId: bestTarget.id,
+      targetId: trackTarget.id,
       aimPoint: liveAimPoint,
       desiredDirection: _toTarget.clone(),
       currentYaw: yaw,
@@ -209,33 +244,30 @@ export class AimAssist {
       responseSpeed: this.responseSpeed,
       snap: this.snapAimDebug,
       tracking: true,
+      locked: true,
+      insideAcquireFov: lockEval?.insideFov ?? false,
     };
 
-    this.debugInfo = this.buildDebugInfo(nearest, bestTarget);
+    this.debugInfo = this.buildDebugInfo(nearest, trackTarget, lockEval);
     return { yaw: newYaw, pitch: newPitch };
   }
 
-  buildDebugInfo(nearest, bestTarget) {
+  buildDebugInfo(nearest, trackTarget, lockEval) {
     const t = this.tracking;
     const lines = [];
 
-    if (bestTarget && t) {
-      lines.push(`Target: ${t.targetId}`);
+    if (trackTarget && t) {
+      lines.push(`Target: ${t.targetId} (LOCKED)`);
+      lines.push(
+        `FOV: acquire ≤${this.lastCameraDebug?.fovHalfDeg?.toFixed(1) ?? "?"}°  ` +
+          `release ≤${this.lastCameraDebug?.releaseHalfDeg?.toFixed(1) ?? "?"}°`
+      );
+      lines.push(
+        `In acquire cone: ${t.insideAcquireFov ? "YES" : "NO (still tracking)"}`
+      );
       lines.push(`Current error: ${t.preErrorDeg.toFixed(2)}°`);
       lines.push(`Yaw error: ${t.yawErrorDeg.toFixed(2)}°`);
       lines.push(`Pitch error: ${t.pitchErrorDeg.toFixed(2)}°`);
-      lines.push(
-        `Desired yaw: ${((t.desiredYaw * 180) / Math.PI).toFixed(2)}°`
-      );
-      lines.push(
-        `Actual yaw: ${((t.currentYaw * 180) / Math.PI).toFixed(2)}°`
-      );
-      lines.push(
-        `Desired pitch: ${((t.desiredPitch * 180) / Math.PI).toFixed(2)}°`
-      );
-      lines.push(
-        `Actual pitch: ${((t.currentPitch * 180) / Math.PI).toFixed(2)}°`
-      );
       lines.push(
         `Post-apply error: ${t.postErrorDeg.toFixed(3)}°`
       );
