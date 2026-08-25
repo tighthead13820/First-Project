@@ -157,6 +157,20 @@ export function fovRadiusPixels(aimFovDeg, cameraVfovDeg, screenHeight) {
   return Math.tan(aimHalfRad) * focalLengthPx;
 }
 
+/**
+ * True when a world point projects inside the camera viewport (NDC bounds).
+ * Uses the camera's current world matrix — call after camera transform is applied.
+ */
+export function isWorldPointOnScreen(worldPoint, camera, marginNdc = 0.02) {
+  _scratchC.copy(worldPoint).project(camera);
+  const x = _scratchC.x;
+  const y = _scratchC.y;
+  const z = _scratchC.z;
+  const min = -1 + marginNdc;
+  const max = 1 - marginNdc;
+  return z > -1 && z < 1 && x >= min && x <= max && y >= min && y <= max;
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }

@@ -26,7 +26,11 @@
         <input type="checkbox" id="snap-aim-debug" checked />
       </label>
       <label>
-        FOV (°)
+        Screen-wide select
+        <input type="checkbox" id="screen-wide-select" checked />
+      </label>
+      <label>
+        FOV (°) <span class="hint-inline">cone mode only</span>
         <input type="range" id="fov" min="1" max="45" step="0.5" value="12" />
         <span id="fov-value">12</span>
       </label>
@@ -43,8 +47,8 @@
       <label>
         Target bone
         <select id="target-bone">
-          <option value="head">Head</option>
-          <option value="chest" selected>Chest</option>
+          <option value="head" selected>Head</option>
+          <option value="chest">Chest</option>
         </select>
       </label>
       <label>
@@ -54,7 +58,7 @@
       </label>
       <label>
         Prediction
-        <input type="checkbox" id="prediction-enabled" />
+        <input type="checkbox" id="prediction-enabled" checked />
       </label>
       <label>
         Projectile speed (m/s)

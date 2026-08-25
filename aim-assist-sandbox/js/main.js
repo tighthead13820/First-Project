@@ -262,12 +262,16 @@ function animate() {
     target.update(dt);
   }
 
-  // 4. Aim assist reads + writes the SAME player.yaw / player.pitch
-  const assisted = aimAssist.update(player, targets, dt);
+  // 4. Sync camera to current look (needed for screen-space target detection)
+  applyCameraTransform();
+  aimAssist.cameraVfov = camera.fov;
+
+  // 5. Aim assist reads + writes the SAME player.yaw / player.pitch
+  const assisted = aimAssist.update(player, targets, dt, camera);
   player.yaw = assisted.yaw;
   player.pitch = THREE.MathUtils.clamp(assisted.pitch, -PITCH_LIMIT, PITCH_LIMIT);
 
-  // 5. Apply camera ONCE from authoritative state
+  // 6. Apply camera ONCE from authoritative state after aim assist
   applyCameraTransform();
 
   updateTargetColours();

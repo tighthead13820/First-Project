@@ -7,6 +7,7 @@ import {
   expSmoothAngle,
   getBoneWorldPosition,
   predictPosition,
+  isWorldPointOnScreen,
 } from "./math.js";
 
 /**
@@ -29,30 +30,31 @@ const _postForward = new THREE.Vector3();
 export class AimAssist {
   constructor() {
     this.enabled = true;
-    /** Full cone width of the aim-assist FOV, in degrees. */
+    /** Acquire cone width (degrees). Ignored when screenWideSelect is true. */
     this.fovDeg = 12;
     /**
-     * @deprecated Prefer responseSpeed. Kept wired for the UI slider as a
-     * coarse fallback mapper; actuation uses responseSpeed + dt.
+     * When true, any target visible on screen (within camera FOV) can be acquired.
+     * This matches "enemy anywhere on screen → track head".
      */
+    this.screenWideSelect = true;
+    /** Camera vertical FOV in degrees — synced from main.js each frame. */
+    this.cameraVfov = 75;
+
     this.smoothing = 0.15;
-    /**
-     * Exponential response speed (1/s). Typical useful range: 1–40.
-     *   1–3 slow · 5–10 gentle · 12–20 responsive · 25–40 very fast
-     */
-    this.responseSpeed = 22;
-    this.targetBone = "chest";
-    this.maxRange = 50;
-    this.predictionEnabled = false;
+    /** Used only when snapAimDebug is false. */
+    this.responseSpeed = 35;
+
+    this.targetBone = "head";
+    this.maxRange = 100;
+    this.predictionEnabled = true;
     this.projectileSpeed = 200;
 
-    /** Bypass smoothing — apply exact desired yaw/pitch every frame. */
-    this.snapAimDebug = false;
+    /** Snap crosshair to head every frame (default ON for this sandbox). */
+    this.snapAimDebug = true;
 
-    /** Sticky lock — keeps tracking after narrow-FOV acquire until release cone. */
     this.lockedTarget = null;
-    /** Release lock when angle exceeds acquireHalf × this multiplier (default 3×). */
-    this.releaseFovMultiplier = 3;
+    /** Release lock only when target leaves the screen (1.0 = same as acquire). */
+    this.releaseFovMultiplier = 1.0;
 
     this.debugForceFirstTarget = false;
     this.debugIgnoreRange = false;
@@ -60,17 +62,29 @@ export class AimAssist {
     this.selectedTarget = null;
     this.evaluations = [];
     this.lastCameraDebug = null;
-    /** Tracking diagnostics for the HUD. */
     this.tracking = null;
     this.debugInfo = "";
+  }
+
+  /** FOV degrees used for acquire + overlay drawing. */
+  getAcquireFovDeg() {
+    if (this.screenWideSelect) {
+      return this.cameraVfov * 0.98;
+    }
+    return this.fovDeg;
+  }
+
+  getReleaseFovDeg() {
+    return this.getAcquireFovDeg() * this.releaseFovMultiplier;
   }
 
   /**
    * @param {object} cameraState - { position, yaw, pitch }
    * @param {Array} targets
    * @param {number} dt - seconds since last frame (required for smooth mode)
+   * @param {THREE.PerspectiveCamera} [renderCamera] - for screen-space visibility
    */
-  update(cameraState, targets, dt = 1 / 60) {
+  update(cameraState, targets, dt = 1 / 60, renderCamera = null) {
     const { position, yaw, pitch } = cameraState;
 
     if (!this.enabled) {
@@ -84,7 +98,8 @@ export class AimAssist {
 
     forwardFromAngles(yaw, pitch, _forward);
 
-    const fovHalfRad = (this.fovDeg * Math.PI) / 180 / 2;
+    const acquireHalfRad = (this.getAcquireFovDeg() * Math.PI) / 180 / 2;
+    const releaseHalfRad = (this.getReleaseFovDeg() * Math.PI) / 180 / 2;
     const evaluations = [];
     let bestTarget = null;
     let bestAngle = Infinity;
@@ -113,7 +128,14 @@ export class AimAssist {
       const angleDeg = (angle * 180) / Math.PI;
       const dot = _forward.dot(_toTarget);
       const inRange = this.debugIgnoreRange || distance <= this.maxRange;
-      const insideFov = angle <= fovHalfRad;
+      const inFront = dot > 0;
+      const onScreen =
+        renderCamera != null
+          ? isWorldPointOnScreen(aimPoint, renderCamera)
+          : inFront && angle <= acquireHalfRad;
+      const insideFov = this.screenWideSelect
+        ? onScreen && inFront
+        : inFront && angle <= acquireHalfRad;
       const passes = inRange && insideFov;
 
       const evaluation = {
@@ -125,6 +147,8 @@ export class AimAssist {
         dot,
         direction: _toTarget.clone(),
         inRange,
+        inFront,
+        onScreen,
         insideFov,
         passes,
       };
@@ -145,10 +169,7 @@ export class AimAssist {
 
     this.evaluations = evaluations;
 
-    // --- Target lock: narrow cone to ACQUIRE, wider cone to RELEASE ---
-    // Without this, slow tracking loses selection the frame the crosshair
-    // lags behind a mover → green flash but no follow.
-    const releaseHalfRad = fovHalfRad * this.releaseFovMultiplier;
+    // --- Target lock: same cone for acquire, release, and green overlay ---
     let lockEval = null;
 
     if (this.lockedTarget) {
@@ -156,7 +177,10 @@ export class AimAssist {
       const stillLocked =
         lockEval &&
         lockEval.inRange &&
-        lockEval.angle <= releaseHalfRad;
+        lockEval.inFront !== false &&
+        (this.screenWideSelect
+          ? lockEval.onScreen
+          : lockEval.angle <= releaseHalfRad);
 
       if (!stillLocked) {
         this.lockedTarget = null;
@@ -164,7 +188,6 @@ export class AimAssist {
       }
     }
 
-    // Acquire a new lock when nothing locked and a target is inside narrow FOV.
     if (!this.lockedTarget && bestTarget) {
       this.lockedTarget = bestTarget;
       lockEval = evaluations.find((e) => e.target === bestTarget) ?? null;
@@ -178,9 +201,10 @@ export class AimAssist {
       forward: _forward.clone(),
       yaw,
       pitch,
-      fovDeg: this.fovDeg,
-      fovHalfDeg: (fovHalfRad * 180) / Math.PI,
+      fovDeg: this.getAcquireFovDeg(),
+      fovHalfDeg: (acquireHalfRad * 180) / Math.PI,
       releaseHalfDeg: (releaseHalfRad * 180) / Math.PI,
+      screenWide: this.screenWideSelect,
     };
 
     if (!trackTarget) {
@@ -245,7 +269,9 @@ export class AimAssist {
       snap: this.snapAimDebug,
       tracking: true,
       locked: true,
-      insideAcquireFov: lockEval?.insideFov ?? false,
+      insideAcquireFov: this.screenWideSelect
+        ? (lockEval?.onScreen ?? false)
+        : (lockEval?.insideFov ?? false),
     };
 
     this.debugInfo = this.buildDebugInfo(nearest, trackTarget, lockEval);
@@ -257,13 +283,14 @@ export class AimAssist {
     const lines = [];
 
     if (trackTarget && t) {
-      lines.push(`Target: ${t.targetId} (LOCKED)`);
+      lines.push(`Target: ${t.targetId} (LOCKED → ${this.targetBone})`);
       lines.push(
-        `FOV: acquire ≤${this.lastCameraDebug?.fovHalfDeg?.toFixed(1) ?? "?"}°  ` +
-          `release ≤${this.lastCameraDebug?.releaseHalfDeg?.toFixed(1) ?? "?"}°`
+        this.screenWideSelect
+          ? `Mode: screen-wide (camera FOV ${this.cameraVfov.toFixed(0)}°)`
+          : `Mode: cone ${this.fovDeg.toFixed(1)}°`
       );
       lines.push(
-        `In acquire cone: ${t.insideAcquireFov ? "YES" : "NO (still tracking)"}`
+        `On screen: ${t.insideAcquireFov ? "YES" : "NO"}`
       );
       lines.push(`Current error: ${t.preErrorDeg.toFixed(2)}°`);
       lines.push(`Yaw error: ${t.yawErrorDeg.toFixed(2)}°`);

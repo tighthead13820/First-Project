@@ -33,6 +33,10 @@ export class UI {
       this.aimAssist.snapAimDebug = el.checked;
     });
 
+    bind("screen-wide-select", (el) => {
+      this.aimAssist.screenWideSelect = el.checked;
+    });
+
     bind("fov", (el) => {
       this.aimAssist.fovDeg = parseFloat(el.value);
       document.getElementById("fov-value").textContent = el.value;
@@ -103,7 +107,7 @@ export class UI {
     this.fovCanvas.height = window.innerHeight;
   }
 
-  /** Draw the aim-assist FOV circle centered on the crosshair. */
+  /** Draw aim-assist region: full viewport when screen-wide, else FOV circle. */
   drawFovOverlay() {
     const ctx = this.fovCtx;
     const w = this.fovCanvas.width;
@@ -112,26 +116,40 @@ export class UI {
 
     if (!this.aimAssist.enabled) return;
 
+    const cx = w / 2;
+    const cy = h / 2;
+    const locked = Boolean(this.aimAssist.selectedTarget);
+    const stroke = locked
+      ? "rgba(68, 255, 136, 0.85)"
+      : "rgba(125, 211, 252, 0.55)";
+    const fill = "rgba(68, 255, 136, 0.06)";
+
+    if (this.aimAssist.screenWideSelect) {
+      const inset = 2;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(inset, inset, w - inset * 2, h - inset * 2);
+      if (locked) {
+        ctx.fillStyle = fill;
+        ctx.fillRect(inset, inset, w - inset * 2, h - inset * 2);
+      }
+      return;
+    }
+
     const radius = fovRadiusPixels(
-      this.aimAssist.fovDeg,
+      this.aimAssist.getAcquireFovDeg(),
       this.camera.fov,
       h
     );
 
-    const cx = w / 2;
-    const cy = h / 2;
-
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = this.aimAssist.selectedTarget
-      ? "rgba(68, 255, 136, 0.85)"
-      : "rgba(125, 211, 252, 0.55)";
+    ctx.strokeStyle = stroke;
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Faint fill when a target is locked
-    if (this.aimAssist.selectedTarget) {
-      ctx.fillStyle = "rgba(68, 255, 136, 0.06)";
+    if (locked) {
+      ctx.fillStyle = fill;
       ctx.fill();
     }
   }
