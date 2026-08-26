@@ -56,6 +56,9 @@ class OverlayApp:
             self.backend = create_backend("simulation")
         self.backend_kind = backend_kind
         self.target_source_kind = target_source_kind
+        self.prefer_network_on_live = target_source_kind == "network"
+        self.network_host = network_host
+        self.network_port = network_port
 
         source = create_target_source(
             target_source_kind,
@@ -130,11 +133,47 @@ class OverlayApp:
             self._controller_hw = RealControllerHardware()
         return self._controller_hw
 
+    def _ensure_network_target_source(self) -> None:
+        """
+        When Aim Core LIVE prefers network telemetry, swap in
+        ExternalNetworkTargetSource and start the UDP listener.
+        """
+        if not self.prefer_network_on_live:
+            return
+        current = self.live.target_source
+        if isinstance(current, ExternalNetworkTargetSource):
+            if not current._started:  # noqa: SLF001
+                current.start()
+            return
+
+        # Stop previous network source if any, then replace.
+        if hasattr(current, "stop"):
+            try:
+                current.stop()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+        net = ExternalNetworkTargetSource(
+            host=self.network_host,
+            port=self.network_port,
+            auto_start=True,
+        )
+        self.live.target_source = net
+        self.live.mode = "screen"
+        self.target_source_kind = "network"
+        print(
+            f"[overlay] Aim Core LIVE → ExternalNetworkTargetSource "
+            f"udp://{net.host}:{net.port}"
+        )
+
     def _on_aim_core_enabled(self, enabled: bool) -> None:
         if enabled and self.panel.script_check.isChecked():
             self.panel.set_script_enabled(False)
             self.scripts.set_enabled(False)
         if enabled:
+            # Read coordinates from ExternalNetworkTargetSource when live prefers network.
+            self._ensure_network_target_source()
+
             hw = self._ensure_controller_hardware()
             if not hw.enabled:
                 self.panel.aim_core_check.setChecked(False)
@@ -181,6 +220,12 @@ class OverlayApp:
             if opts["show_viz"]:
                 self.aim_viz.resize_to_screen(sw, sh, sx, sy)
                 self.aim_viz.show()
+            src = self.live.target_source
+            if isinstance(src, ExternalNetworkTargetSource):
+                self.panel.set_script_status(
+                    f"LIVE source: ExternalNetworkTargetSource "
+                    f"udp://{src.host}:{src.port}"
+                )
         else:
             self.aim_viz.hide()
         self.panel.set_aim_dashboard(self.live.format_dashboard())
