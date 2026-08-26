@@ -1,0 +1,7 @@
+# PS Remote Play control overlay — Windows desktop
+# Python 3.10+ recommended
+PySide6>=6.6.0,<7
+
+# Optional: real virtual DualShock 4 / Xbox pad (Windows + ViGEmBus only)
+# Install ViGEmBus first: https://github.com/nefarius/ViGEmBus/releases
+vgamepad>=0.2.0; platform_system=="Windows"
